@@ -30,3 +30,5 @@ a.out
 *.iso
 *.dll
 ass0/src/Example/dog.c
+ass0/src/test
+ass0/src/test.c
