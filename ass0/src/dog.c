@@ -14,11 +14,11 @@ int main(int argc, char *argv[]){
     int rone = read(fone, buff, sizeof(buff));
     int rtwo = read(ftwo, buff2, sizeof(buff2));
 
-    printf("%d", rone);
+    //printf("%d\n", rone);
 
     close(fone);
     close(ftwo);
 
-    fprintf(stdout, "%s\n", buff);
+    fprintf(stdout, "%s", buff);
     fprintf(stdout, "%s", buff2);
 }
