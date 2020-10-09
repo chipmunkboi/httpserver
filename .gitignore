@@ -29,8 +29,5 @@ a.out
 *.img
 *.iso
 *.dll
-ass0/src/Example/dog.c
-ass0/src/test
-ass0/src/test.c
-ass0/src/Example/test
-ass0/src/Example/test.c
+/ass0/src/Example/
+
