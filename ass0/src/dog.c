@@ -32,7 +32,8 @@ int main(int argc, char *argv[]){
 
         // clears buffer before reading new file
         memset(buff, 0, sizeof(buff)); 
-        
+        // flushes buffer to prevent out of order execution
+        fflush(stdout);
         // check if "-" is present for user input
         printf("%s", argv[i]);
         if (strcmp(argv[i], "-") == 0){
