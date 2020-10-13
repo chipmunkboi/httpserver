@@ -30,7 +30,8 @@ a.out
 *.iso
 *.dll
 *.txt
-/assignment0/src/Example/
+*.docx
+/asgn0/src/Example/
 
 # ignore all .vscode folders
 .vscode*/
