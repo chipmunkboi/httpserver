@@ -11,7 +11,7 @@
 void userinput(char argzero[]){
     char buf[1];
     while((read(STDIN_FILENO, buf, 1)) != 0){ 
-        int write_check = write(1, buf, 1);
+        int write_check = write(STDOUT_FILENO, buf, 1);
         if (write_check == -1){
             warn("%s", argzero);
         }
@@ -33,9 +33,9 @@ int main(int argc, char *argv[]){
         // clears buffer before reading new file
         memset(buff, 0, sizeof(buff)); 
         // flushes buffer to prevent out of order execution
-        fflush(stdout);
+        //fflush(stdout);
         // check if "-" is present for user input
-        printf("%s", argv[i]);
+        //printf("%s", argv[i]);
         if (strcmp(argv[i], "-") == 0){
             userinput(argv[i]);
             continue;
@@ -50,10 +50,16 @@ int main(int argc, char *argv[]){
             close(fone);
             continue;
         }
-        int rone = read(fone, buff, sizeof(buff));
+        //int rone = read(fone, buff, sizeof(buff));
+        while(read(fone, buff, 1) != 0){
+            int write_check = write(STDOUT_FILENO, buff, 1);
+            if (write_check == -1){
+                warn("%s", argv[i]);
+            }
+        }
         close(fone);
 
-        fprintf(stdout, "%s", buff);
+        //fprintf(stdout, "%s", buff);
 
     }
 }
