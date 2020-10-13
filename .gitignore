@@ -31,3 +31,5 @@ a.out
 *.dll
 /ass0/src/Example/
 
+# ignore all .vscode folders
+.vscode*/
