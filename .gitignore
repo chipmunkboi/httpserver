@@ -29,6 +29,7 @@ a.out
 *.img
 *.iso
 *.dll
+*.txt
 /ass0/src/Example/
 
 # ignore all .vscode folders
