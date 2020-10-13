@@ -20,7 +20,7 @@ void userinput(char argzero[]){
 
 int main(int argc, char *argv[]){
     // declare a 100 byte buffer to be used per file
-    char buff[100]; 
+    char buff[5000]; 
 
     // if only arg is "dog"
     if (argc == 1){ 
@@ -54,9 +54,8 @@ int main(int argc, char *argv[]){
                 warn("%s", argv[i]);
             }
         }
+        
         close(fone);
-
-        //fprintf(stdout, "%s", buff);
 
     }
 }
