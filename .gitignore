@@ -31,7 +31,7 @@ a.out
 *.dll
 *.txt
 *.docx
-/asgn0/src/Example/
+/asgn0/Example/
 
 # ignore all .vscode folders
 .vscode*/
