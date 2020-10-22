@@ -69,7 +69,7 @@ int main(int argc, char *argv[]){
     char buf[SIZE];
     while(true){
         //accept incoming connections
-        int comm_fd = accept(server_socket, NULL, NULL);
+        int comm_fd = accept(server_socket, NULL, NULL); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
         
         while(1){
             //use comm_fd to comm with client
