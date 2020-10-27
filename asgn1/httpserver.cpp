@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <netdb.h>
+#include <stdlib.h>
 
 #include <string.h>     //memset
 #include <stdlib.h>     //atoi
@@ -18,24 +19,39 @@
 struct httpObject {
     char type[4];           //PUT, GET
     char filename[10];      //10 character ASCII name
+    int status_code;
     ssize_t content_length;
 };
 
-//parses the request for the request type, file name, and content length (if PUT)
-// void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
-//     sscanf(buf, "%s %s", request->type, request->filename);
-//     memmove(request->filename, request->filename+1, strlen(request->filename));
-//     if(strcmp(request->type, "PUT") == 0){
-//         sscanf(buf, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %ld", &request->content_length);
-//         printf("length: %ld\n", request->content_length);
-//         fflush(stdout);
-//     }
+char* getCode(int status_code){
+    if(status_code==200){
+        return "200 OK";
+    }else if(status_code==201){
+        return "201 Created";
+    }else if(status_code==400){
+        return "400 Bad Request";
+    }else if(status_code==403){
+        return "403 Forbidden";
+    }else if(status_code==404){
+        return "404 Not Found";
+    }else if(status_code==500){
+        return "500 Internal Server Error";
+    }
+}
 
-//     printf("type: %s\n", request->type);
-//     fflush(stdout);
-//     printf("filename: %s\n", request->filename);
-//     fflush(stdout);
-// }
+void construct_response(ssize_t comm_fd, struct httpObject* request){
+    char length_string[20];
+    sprintf(length_string, "%ld", request->content_length);
+    // itoa(request->content_length, length_string, 10);
+    char response[50];
+    strcpy (response,"HTTP/1.1 ");
+    strcat (response, getCode(request->status_code));
+    strcat (response, "\r\n");
+    strcat (response, "Content-Length: ");
+    strcat (response, length_string);
+    strcat (response, "\r\n\r\n");
+    send(comm_fd, response, strlen(response), 0);
+}
 
 void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     sscanf(buf, "%s %s", request->type, request->filename);
@@ -45,7 +61,6 @@ void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 		if(strncmp(token, "Content-Length:", 15) == 0){
 			sscanf(token, "%*s %ld", &request->content_length);
             printf("content length!: %ld\n", request->content_length);
-            fflush(stdout);
 
 		}else if(strncmp(token, "\r\n", 2)==0){
 			break;
@@ -53,27 +68,40 @@ void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 
 		token = strtok(NULL, "\r\n");
 	}
-
-    printf("type: %s\n", request->type);
-    fflush(stdout);
-    printf("filename: %s\n", request->filename);
-    fflush(stdout);
 }
 
 void get_request(ssize_t comm_fd, struct httpObject* request, char* buf, int n){
     memset(buf, 0, sizeof(buf));
     int file = open(request->filename, O_RDONLY);
+
     if (file == -1){
-        warn("%s", request->filename);
-        // close(file);
+        // warn("%s", request->filename);
+        if(errno==ENOENT){ 
+            request->status_code = 404;
+        }else if(errno==EACCES){ 
+            request->status_code = 403;
+        }else{
+            request->status_code = 400;
+        }
+        construct_response(comm_fd, request);
+    }else{
+        request->status_code = 200;
+        struct stat size;
+        fstat(file, &size);
+        request->content_length = size.st_size;
+
+        //header here
+        construct_response(comm_fd, request);
+
+        while(read(file, buf, 1) != 0){
+            int write_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
+            if (write_check == -1){
+                warn("%s", request->filename);
+            } 
+        } 
     }
 
-    while(read(file, buf, 1) != 0){
-        int write_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
-        if (write_check == -1){
-            warn("%s", request->filename);
-        }
-    }
+    
     close(file);
 }
 
@@ -111,7 +139,6 @@ int getPort (char argone[]){
 int main (int argc, char *argv[]){
     int opt = 1;
     int port = getPort(argv[1]);
-    printf("port = %d\n", port);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
