@@ -6,14 +6,50 @@
 #include <string.h>     //memset
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
+
+#include <stdio.h>      //printf, perror
+
 #define SIZE 1000
 
-// temp
-#include <stdio.h>      //printf, perror
-//
+struct httpObject {
+    char type[4];           //PUT, GET
+    char filename[10];      //10 character ASCII name
+    int content_length;
+};
+
+void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+    sscanf(buf, "%s %s", request->type, request->filename);
+    memmove(request->filename, request->filename+1, strlen(request->filename));
+    if(strcmp(request->type, "PUT") == 0){
+        sscanf(buf, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %d", &request->content_length);
+        printf("length: %d\n", request->content_length);
+        fflush(stdout);
+    }
+
+    printf("type: %s\n", request->type);
+    fflush(stdout);
+    printf("filename: %s\n", request->filename);
+    fflush(stdout);
+}
+
+
+void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
+    while(true){
+        //use comm_fd to comm with client
+        int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
+        parse_request(comm_fd, request, buf);   //Parses the header to the request variables
+        fflush(stdin);
+        if(n == 0) break;
+        send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
+        write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
+    }
+    //receive header
+    //send http response
+
+}
 
 //port is set to user-specified number or 80 by default
-int getport (char argone[]){
+int getPort (char argone[]){
     int port;
 
     if (argone != NULL){
@@ -31,7 +67,7 @@ int getport (char argone[]){
 
 int main (int argc, char *argv[]){
     int opt = 1;
-    int port = getport(argv[1]);
+    int port = getPort(argv[1]);
     printf("port = %d\n", port);
 
     struct sockaddr_in server_addr;
@@ -67,20 +103,26 @@ int main (int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
 
+    struct sockaddr client_addr;
+    socklen_t client_addrlen;
     char buf[SIZE];
-    while(true){
-        //accept incoming connections
-        int comm_fd = accept(server_socket, NULL, NULL); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-        
-        /*while(1){
-            //use comm_fd to comm with client
-            int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
-            if(n == 0) break;
-            send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd...
-            write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout
-            //
-        }*/
+    struct httpObject request;
 
+    
+       
+    while(true){
+        //accept incoming connection
+        int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+        executeFunctions(comm_fd, &request, buf);
+        //while(true){
+            //use comm_fd to comm with client
+            //int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
+            //parse_request(comm_fd, &request, buf); 
+            //fflush(stdin);
+            //if(n == 0) break;
+            //send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
+            //write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
+        //}
         //receive header
         //send http response
     }
