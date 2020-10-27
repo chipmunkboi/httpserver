@@ -7,12 +7,13 @@
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
 #define SIZE 1000
+
 // temp
-#include <stdio.h>      //printf
+#include <stdio.h>      //printf, perror
 //
 
 //port is set to user-specified number or 80 by default
-int getport(char argone[]){
+int getport (char argone[]){
     int port;
 
     if (argone != NULL){
@@ -28,7 +29,7 @@ int getport(char argone[]){
     return port;
 }
 
-int main(int argc, char *argv[]){
+int main (int argc, char *argv[]){
     int opt = 1;
     int port = getport(argv[1]);
     printf("port = %d\n", port);
@@ -71,15 +72,16 @@ int main(int argc, char *argv[]){
         //accept incoming connections
         int comm_fd = accept(server_socket, NULL, NULL); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
         
-        while(1){
+        /*while(1){
             //use comm_fd to comm with client
-            int n = recv(comm_fd, buf, SIZE, 0);
+            int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
             if(n == 0) break;
-            send(comm_fd, buf, n, 0);
-            write(STDOUT_FILENO, buf, n);
+            send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd...
+            write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout
             //
-        }
+        }*/
 
-        //send/recv?
+        //receive header
+        //send http response
     }
 }
