@@ -6,25 +6,53 @@
 #include <string.h>     //memset
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
+#include <fcntl.h>      //open
 
 #include <stdio.h>      //printf, perror
+
+#include <errno.h>
+#include <err.h>
 
 #define SIZE 1000
 
 struct httpObject {
     char type[4];           //PUT, GET
     char filename[10];      //10 character ASCII name
-    int content_length;
+    ssize_t content_length;
 };
+
+//parses the request for the request type, file name, and content length (if PUT)
+// void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+//     sscanf(buf, "%s %s", request->type, request->filename);
+//     memmove(request->filename, request->filename+1, strlen(request->filename));
+//     if(strcmp(request->type, "PUT") == 0){
+//         sscanf(buf, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %ld", &request->content_length);
+//         printf("length: %ld\n", request->content_length);
+//         fflush(stdout);
+//     }
+
+//     printf("type: %s\n", request->type);
+//     fflush(stdout);
+//     printf("filename: %s\n", request->filename);
+//     fflush(stdout);
+// }
 
 void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     sscanf(buf, "%s %s", request->type, request->filename);
     memmove(request->filename, request->filename+1, strlen(request->filename));
-    if(strcmp(request->type, "PUT") == 0){
-        sscanf(buf, "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %d", &request->content_length);
-        printf("length: %d\n", request->content_length);
-        fflush(stdout);
-    }
+    char* token = strtok(buf, "\r\n");
+	while(token){
+		if(strncmp(token, "Content-Length:", 15) == 0){
+			sscanf(token, "%*s %ld", &request->content_length);
+            printf("content length!: %ld\n", request->content_length);
+            fflush(stdout);
+
+		}else if(strncmp(token, "\r\n", 2)==0){
+			break;
+		}
+
+		token = strtok(NULL, "\r\n");
+	}
 
     printf("type: %s\n", request->type);
     fflush(stdout);
@@ -32,20 +60,35 @@ void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     fflush(stdout);
 }
 
+void get_request(ssize_t comm_fd, struct httpObject* request, char* buf, int n){
+    memset(buf, 0, sizeof(buf));
+    int file = open(request->filename, O_RDONLY);
+    if (file == -1){
+        warn("%s", request->filename);
+        // close(file);
+    }
+
+    while(read(file, buf, 1) != 0){
+        int write_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
+        if (write_check == -1){
+            warn("%s", request->filename);
+        }
+    }
+    close(file);
+}
 
 void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
-    while(true){
         //use comm_fd to comm with client
         int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
         parse_request(comm_fd, request, buf);   //Parses the header to the request variables
-        fflush(stdin);
-        if(n == 0) break;
-        send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
-        write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
-    }
+        if(strcmp(request->type, "GET") == 0){
+            get_request(comm_fd, request, buf, n);
+        }
+        // fflush(stdin);
+        // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
+        // write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
     //receive header
     //send http response
-
 }
 
 //port is set to user-specified number or 80 by default
@@ -107,8 +150,6 @@ int main (int argc, char *argv[]){
     socklen_t client_addrlen;
     char buf[SIZE];
     struct httpObject request;
-
-    
        
     while(true){
         //accept incoming connection
