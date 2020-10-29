@@ -100,7 +100,6 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf, int n){
             } 
         } 
     }
-
     
     close(file);
 }
@@ -137,7 +136,6 @@ int getPort (char argone[]){
 }
 
 int main (int argc, char *argv[]){
-    int opt = 1;
     int port = getPort(argv[1]);
 
     struct sockaddr_in server_addr;
@@ -150,16 +148,19 @@ int main (int argc, char *argv[]){
         exit(EXIT_FAILURE);
     }
 
+    server_addr.sin_family = AF_INET;
+    //https://stackoverflow.com/questions/37376903/bind-with-127-0-0-1-and-inaddr-any
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); //"don't use INADDR_ANY", use inet_aton()
+    //inet_aton("127.0.0.1", &server_addr.sin_addr); //arg1 instead of ""
+    server_addr.sin_port = htons(port);
+    socklen_t addrlen = sizeof(server_addr);
+
     //setsockopt: helps in reusing address and port
+    int opt = 1;
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(port);
-    socklen_t addrlen = sizeof(server_addr);
 
     //bind server address to open socket
     if (bind(server_socket, (struct sockaddr *)&server_addr, addrlen) < 0){
