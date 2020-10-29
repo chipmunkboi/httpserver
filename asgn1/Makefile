@@ -19,7 +19,6 @@ TARGET=httpserver
 # Define the compiler flags for compiling your code. You may wish to change these for
 # debugging or optimization purposes. We suggest, that when you submit your code, you use
 # the flags defined in _submit_CXXFLAGS below.
-#CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow -g -Og
 CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow
 
 # Define the linker flags for your project. You probably don't need to add anything here.
@@ -27,8 +26,7 @@ LDFLAGS=
 
 # These are the flags that you should submit your code with. We will make sure that your
 # code is compiled with these flags when we grade it.
-#_submit_CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow -g -O2
-_test_CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow -g -Og
+_submit_CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow -g -O2
 
 # !!
 # !! You need not modify any of the lines below.
@@ -38,7 +36,7 @@ _test_CXXFLAGS=-std=gnu++11 -Wall -Wextra -Wpedantic -Wshadow -g -Og
 # Generate a list of object files from the source files. If SOURCES is 'foo.cpp bar.cpp', then
 # OBJECTS will contain 'foo.o bar.o'. These are the files that will be produced by the compiler,
 # one for each compilation unit.
-OBJECTS=$(SOURCES:.c=.o)
+OBJECTS=$(SOURCES:.cpp=.o)
 
 # Generate a list of dependency files, similar to OBJECTS above. This time, however, the files will
 # be .d files, and will contain a list of _dependencies_ for each source file. These files are in make
@@ -48,10 +46,10 @@ OBJECTS=$(SOURCES:.c=.o)
 # the one source file that included that header. That's the purpose of dependencies. You can specify these
 # manually, like 'foo.cpp: foo.h bar.h' if you want, but the method in this makefile generates them
 # automatically.
-DEPS=$(SOURCES:.c=.d)
+DEPS=$(SOURCES:.cpp=.d)
 
-# We're using gcc as our C compiler.
-CXX=gcc
+# We're using clang as our C++ compiler.
+CXX=clang
 
 # provide a default target, with the standard name 'all'.
 all: $(TARGET)
@@ -80,7 +78,7 @@ $(TARGET): $(OBJECTS)
 #
 # The -MD flag auto-generates the .d file for this source file. If you're curious about the contents,
 # make your program, observe the .d files that are generated, and crack one open.
-%.o: %.c
+%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -MD -o $@ $<
 
 # include the dependency files we've generated (but ignore if there's an error--they may not exist yet).
