@@ -119,11 +119,11 @@ void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
 }
 
 //port is set to user-specified number or 80 by default
-int getPort (char argone[]){
+int getPort (char argtwo[]){
     int port;
 
-    if (argone != NULL){
-        port = atoi(argone);
+    if (argtwo != NULL){
+        port = atoi(argtwo);
         if (port < 1024){
             printf("Port Error: Port numbers must be above 1024\n");
             exit(EXIT_FAILURE);
@@ -136,7 +136,7 @@ int getPort (char argone[]){
 }
 
 int main (int argc, char *argv[]){
-    int port = getPort(argv[1]);
+    int port = getPort(argv[2]);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
