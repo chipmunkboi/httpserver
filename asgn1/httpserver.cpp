@@ -141,19 +141,19 @@ int main (int argc, char *argv[]){
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
         
-    //create server socket file descriptor
-    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0){
-        perror("server_socket");
-        exit(EXIT_FAILURE);
-    }
-
     server_addr.sin_family = AF_INET;
     //https://stackoverflow.com/questions/37376903/bind-with-127-0-0-1-and-inaddr-any
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY); //"don't use INADDR_ANY", use inet_aton()
     //inet_aton("127.0.0.1", &server_addr.sin_addr); //arg1 instead of ""
     server_addr.sin_port = htons(port);
     socklen_t addrlen = sizeof(server_addr);
+
+    //create server socket file descriptor
+    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0){
+        perror("server_socket");
+        exit(EXIT_FAILURE);
+    }
 
     //setsockopt: helps in reusing address and port
     int opt = 1;
