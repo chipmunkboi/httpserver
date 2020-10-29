@@ -9,10 +9,15 @@
 #include <unistd.h>     //write
 #include <fcntl.h>      //open
 
-#include <stdio.h>      //printf, perror
-
 #include <errno.h>
 #include <err.h>
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#include <stdio.h>      //printf, perror
+
+
 
 #define SIZE 1000
 
@@ -70,7 +75,7 @@ void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 	}
 }
 
-void get_request(ssize_t comm_fd, struct httpObject* request, char* buf, int n){
+void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     memset(buf, 0, sizeof(buf));
     int file = open(request->filename, O_RDONLY);
 
@@ -94,22 +99,60 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf, int n){
         construct_response(comm_fd, request);
 
         while(read(file, buf, 1) != 0){
-            int write_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
-            if (write_check == -1){
-                warn("%s", request->filename);
-            } 
+            int send_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
+            // if (send_check == -1){
+            //     warn("%s", request->filename);
+            // } 
         } 
     }
     
     close(file);
 }
 
+void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+    memset(buf, 0, sizeof(buf));
+    int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
+    if(file == -1){
+        request->status_code = 500;
+        construct_response(comm_fd, request);
+    }else{
+        request->status_code = 201;
+        construct_response(comm_fd, request);
+        ssize_t bytes_read;
+        if(request->content_length != NULL){
+            while(request->content_length >= 0){
+                bytes_read = recv(comm_fd, buf, SIZE, 0);
+                printf("bytes read = %ld", bytes_read);
+                fflush(stdout);
+                // if (bytes_read = -1){
+                //     warn("%s", request->filename);
+                // }
+                int write_check = write(file, buf, bytes_read);
+                printf("size of buf = %d", sizeof(buf));
+                fflush(stdout);
+                request->content_length = request->content_length - bytes_read;
+                printf("request->content length = %ld", request->content_length);
+                fflush(stdout);
+            }
+        //no content-length is specified
+        }else{
+            while(recv(comm_fd, buf, SIZE, 0) > 0){
+                int write_check = write(file, buf, sizeof(buf));
+            }
+        }
+    } 
+    close(file); 
+}
+
 void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
         //use comm_fd to comm with client
-        int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
+        recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
         parse_request(comm_fd, request, buf);   //Parses the header to the request variables
         if(strcmp(request->type, "GET") == 0){
-            get_request(comm_fd, request, buf, n);
+            get_request(comm_fd, request, buf);
+        }else if(strcmp(request->type, "PUT") == 0){
+            put_request(comm_fd, request, buf);
+
         }
         // fflush(stdin);
         // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
@@ -124,8 +167,7 @@ int getPort (char argtwo[]){
 
     if (argtwo != NULL){
         port = atoi(argtwo);
-        printf("port = %d", port);
-        fflush(stdout);
+
         if (port < 1024){
             printf("Port Error: Port numbers must be above 1024\n");
             exit(EXIT_FAILURE);
@@ -143,10 +185,9 @@ int main (int argc, char *argv[]){
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
         
-    server_addr.sin_family = AF_INET;
-    //https://stackoverflow.com/questions/37376903/bind-with-127-0-0-1-and-inaddr-any
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); //"don't use INADDR_ANY", use inet_aton()
-    //inet_aton("127.0.0.1", &server_addr.sin_addr); //arg1 instead of ""
+    server_addr.sin_family = AF_INET;   
+    // server_addr.sin_addr.s_addr = htonl(INADDR_ANY); //"don't use INADDR_ANY", use inet_aton() or getaddrinfo()
+    inet_aton(argv[1], &server_addr.sin_addr);
     server_addr.sin_port = htons(port);
     socklen_t addrlen = sizeof(server_addr);
 
