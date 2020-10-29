@@ -12,14 +12,12 @@
 #include <errno.h>
 #include <err.h>
 
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <netinet/in.h> //inet_aton
+#include <arpa/inet.h>  //inet_aton
 
 #include <stdio.h>      //printf, perror
 
-
-
-#define SIZE 1000
+#define SIZE 5000
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -95,7 +93,6 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
         fstat(file, &size);
         request->content_length = size.st_size;
 
-        //header here
         construct_response(comm_fd, request);
 
         while(read(file, buf, 1) != 0){
@@ -153,12 +150,14 @@ void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
         }else if(strcmp(request->type, "PUT") == 0){
             put_request(comm_fd, request, buf);
 
+        }else{
+            request->status_code = 400;
+            construct_response(comm_fd, request);
         }
         // fflush(stdin);
         // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
         // write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
-    //receive header
-    //send http response
+
 }
 
 //port is set to user-specified number or 80 by default
@@ -186,7 +185,6 @@ int main (int argc, char *argv[]){
     memset(&server_addr, 0, sizeof(server_addr));
         
     server_addr.sin_family = AF_INET;   
-    // server_addr.sin_addr.s_addr = htonl(INADDR_ANY); //"don't use INADDR_ANY", use inet_aton() or getaddrinfo()
     inet_aton(argv[1], &server_addr.sin_addr);
     server_addr.sin_port = htons(port);
     socklen_t addrlen = sizeof(server_addr);
