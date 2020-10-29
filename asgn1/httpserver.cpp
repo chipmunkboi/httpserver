@@ -124,6 +124,8 @@ int getPort (char argtwo[]){
 
     if (argtwo != NULL){
         port = atoi(argtwo);
+        printf("port = %d", port);
+        fflush(stdout);
         if (port < 1024){
             printf("Port Error: Port numbers must be above 1024\n");
             exit(EXIT_FAILURE);
