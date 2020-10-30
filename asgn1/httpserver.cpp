@@ -8,6 +8,7 @@
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
 #include <fcntl.h>      //open
+#include <ctype.h>      //isalnum
 
 #include <errno.h>
 #include <err.h>
@@ -21,8 +22,8 @@
 
 struct httpObject {
     char type[4];           //PUT, GET
-    char httpversion[9];   //HTTP/1.1
-    char filename[10];      //10 character ASCII name
+    char httpversion[9];    //HTTP/1.1
+    char filename[12];      //10 character ASCII name
     int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length;
 };
@@ -58,21 +59,48 @@ void construct_response(ssize_t comm_fd, struct httpObject* request){
     send(comm_fd, response, strlen(response), 0);
 }
 
+//returns TRUE if name is valid and FALSE if name is invalid
+bool valid_name(struct httpObject* request){
+    if(request->filename[0] != '/') return false;
+    else memmove(request->filename, request->filename+1, strlen(request->filename));
+    
+    //check that name is 10 char long
+    if(strlen(request->filename) != 10){
+        return false;
+    }
+
+    //check that all chars are ASCII chars
+    for(int i=0; i<10; i++){
+        if(!isalnum(request->filename[i])) return false;
+    }
+
+    return true;
+}
+
 void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
-    memmove(request->filename, request->filename+1, strlen(request->filename));
-    char* token = strtok(buf, "\r\n");
-	while(token){
-		if(strncmp(token, "Content-Length:", 15) == 0){
-			sscanf(token, "%*s %ld", &request->content_length);
-            printf("content length!: %ld\n", request->content_length);
 
-		}else if(strncmp(token, "\r\n", 2)==0){
-			break;
-		}
+    //check that httpversion is "HTTP/1.1"
+    if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+        request->status_code = 400;
+        construct_response(comm_fd, request);
+    
+    //check that filename is made of 10 ASCII characters
+    }else if(!valid_name(request)){
+        request->status_code = 400;
+        construct_response(comm_fd, request);
 
-		token = strtok(NULL, "\r\n");
-	}
+    }else{
+        char* token = strtok(buf, "\r\n");
+        while(token){
+            if(strncmp(token, "Content-Length:", 15) == 0){
+                sscanf(token, "%*s %ld", &request->content_length);
+            }else if(strncmp(token, "\r\n", 2)==0){
+                break;
+            }
+            token = strtok(NULL, "\r\n");
+        }
+    }
 }
 
 void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
@@ -98,7 +126,7 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
         construct_response(comm_fd, request);
 
         while(read(file, buf, 1) != 0){
-            int send_check = send(comm_fd, buf, 1, 0);//write(STDOUT_FILENO, buf, 1); //printing on server
+            int send_check = send(comm_fd, buf, 1, 0); //printing on server
             // if (send_check == -1){
             //     warn("%s", request->filename);
             // } 
@@ -114,52 +142,51 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     if(file == -1){
         request->status_code = 500;
         construct_response(comm_fd, request);
+
     }else{
-        request->status_code = 201;
-        construct_response(comm_fd, request);
         ssize_t bytes_read;
-        if(request->content_length != NULL){
-            while(request->content_length >= 0){
+
+        if(request->content_length != 0){          
+            while(request->content_length > 0){
                 bytes_read = recv(comm_fd, buf, SIZE, 0);
-                printf("bytes read = %ld", bytes_read);
-                fflush(stdout);
-                // if (bytes_read = -1){
-                //     warn("%s", request->filename);
-                // }
                 int write_check = write(file, buf, bytes_read);
-                printf("size of buf = %ld", sizeof(buf));
-                fflush(stdout);
                 request->content_length = request->content_length - bytes_read;
-                printf("request->content length = %ld", request->content_length);
-                fflush(stdout);
             }
-        //no content-length is specified
+
         }else{
-            while(recv(comm_fd, buf, SIZE, 0) > 0){
-                int write_check = write(file, buf, sizeof(buf));
+            while(bytes_read = recv(comm_fd, buf, SIZE, 0) > 0){
+                int write_check = write(file, buf, bytes_read);
             }
         }
+
+        //if all bytes were received and written, success
+        if(request->content_length == 0) request->status_code = 201;
+        else request->status_code = 500;
+        
+
+        construct_response(comm_fd, request);
+
     } 
     close(file); 
 }
 
 void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
-        //use comm_fd to comm with client
-        recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
-        parse_request(comm_fd, request, buf);   //Parses the header to the request variables
-        if(strcmp(request->type, "GET") == 0){
-            get_request(comm_fd, request, buf);
-        }else if(strcmp(request->type, "PUT") == 0){
-            put_request(comm_fd, request, buf);
+    //use comm_fd to comm with client
+    recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
+    parse_request(comm_fd, request, buf);   //Parses the header to the request variables
+    if(strcmp(request->type, "GET") == 0){
+        get_request(comm_fd, request, buf);
 
-        }else{
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-        }
-        // fflush(stdin);
-        // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
-        // write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
+    }else if(strcmp(request->type, "PUT") == 0){
+        put_request(comm_fd, request, buf);
 
+    }else{
+        request->status_code = 400;
+        construct_response(comm_fd, request);
+    }
+    // fflush(stdin);
+    // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
+    // write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
 }
 
 //port is set to user-specified number or 80 by default
@@ -237,5 +264,7 @@ int main (int argc, char *argv[]){
         //}
         //receive header
         //send http response
+        close(comm_fd);
     }
+    return EXIT_SUCCESS;
 }
