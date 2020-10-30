@@ -18,7 +18,7 @@
 
 #include <stdio.h>      //printf, perror
 
-#define SIZE 5000
+#define SIZE 100
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -26,8 +26,25 @@ struct httpObject {
     char filename[12];      //10 character ASCII name
     int status_code;        //200, 201, 400, 403, 404, 500
     bool exists;            //flag for whether file already exists
+    bool first_parse;       
     ssize_t content_length;
 };
+
+// void clear_struct(struct httpObject* request){
+//     request->type = NULL;
+//     request->httpversion = NULL;
+//     request->filename = NULL;
+//     request->status_code = 0;
+//     request->
+// }
+
+void print_struct(struct httpObject* request){
+    printf("type = %s\n", request->type);
+    printf("ver = %s\n", request->httpversion);
+    printf("name = %s\n", request->filename);
+    printf("code = %d\n", request->status_code);
+    printf("content length = %ld\n", request->content_length);
+}
 
 const char* getCode(int status_code){
     char const *code;
@@ -44,7 +61,7 @@ const char* getCode(int status_code){
     }else if(status_code==500){
         code = "500 Internal Server Error";
     }else{
-        code="";
+        code = "";
     }
 
     return code;
@@ -83,31 +100,32 @@ bool valid_name(struct httpObject* request){
     return true;
 }
 
-void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
-    sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
+// void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+//     printf("in parse req\n");
+//     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
-    //check that httpversion is "HTTP/1.1"
-    if(strcmp(request->httpversion, "HTTP/1.1") != 0){
-        request->status_code = 400;
-        construct_response(comm_fd, request);
+//     //check that httpversion is "HTTP/1.1"
+//     if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+//         request->status_code = 400;
+//         construct_response(comm_fd, request);
     
-    //check that filename is made of 10 ASCII characters
-    }else if(!valid_name(request)){
-        request->status_code = 400;
-        construct_response(comm_fd, request);
+//     //check that filename is made of 10 ASCII characters
+//     }else if(!valid_name(request)){
+//         request->status_code = 400;
+//         construct_response(comm_fd, request);
 
-    }else{
-        char* token = strtok(buf, "\r\n");
-        while(token){
-            if(strncmp(token, "Content-Length:", 15) == 0){
-                sscanf(token, "%*s %ld", &request->content_length);
-            }else if(strncmp(token, "\r\n", 2)==0){
-                break;
-            }
-            token = strtok(NULL, "\r\n");
-        }
-    }
-}
+//     }else{
+//         char* token = strtok(buf, "\r\n");
+//         while(token){
+//             if(strncmp(token, "Content-Length:", 15) == 0){
+//                 sscanf(token, "%*s %ld", &request->content_length);
+//             }else if(strncmp(token, "\r\n", 2)==0){
+//                 break;
+//             }
+//             token = strtok(NULL, "\r\n");
+//         }
+//     }
+// }
 
 void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     memset(buf, 0, SIZE);
@@ -139,6 +157,8 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 }
 
 void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+    printf("start of PUT\n");
+
     memset(buf, 0, SIZE);
 
     //check whether file already exists
@@ -154,13 +174,13 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
         construct_response(comm_fd, request);
 
     }else{
-        ssize_t bytes_read;
+        ssize_t bytes_recv;
 
         if(request->content_length != 0){          
             while(request->content_length > 0){
-                bytes_read = recv(comm_fd, buf, SIZE, 0);
-                write(file, buf, bytes_read);
-                request->content_length = request->content_length - bytes_read;
+                bytes_recv = recv(comm_fd, buf, SIZE, 0);
+                write(file, buf, bytes_recv);
+                request->content_length = request->content_length - bytes_recv;
             }
 
             //if all bytes were received and written, success
@@ -168,14 +188,22 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
                 //if file already exists return success if not return 201
                 if(request->exists == true) request->status_code = 200;
                 else request->status_code = 201;
-            //connected closed before all bytes were sent
+                
+            //connection closed before all bytes were sent
             }else{
                 request->status_code = 500;
             }
 
+        //server copies data until read() reads EOF
         }else{
-            while((bytes_read = recv(comm_fd, buf, SIZE, 0)) > 0){
-                write(file, buf, bytes_read);
+            printf("in broken else\n");
+            // while((bytes_read = read(comm_fd, buf, SIZE)) > 0){
+            //     write(file, buf, bytes_read);
+            // }
+
+            while(!EOF){
+                bytes_recv = recv(comm_fd, buf, SIZE, 0);
+                write(file, buf, bytes_recv);
             }
             if(request->exists == true) request->status_code = 200;
             else request->status_code = 201;
@@ -183,20 +211,115 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 
         construct_response(comm_fd, request);
     } 
+    printf("end of PUT\n");
     close(file); 
 }
 
+void set_flag(struct httpObject* request, bool value){
+    request->first_parse = value;
+
+    if(request->first_parse == true) printf("true\n");
+    else printf("false\n");
+}
+
+void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
+    printf("in parse req\n");
+    fflush(stdout);
+    if(request->first_parse){
+        printf("in first parse\n");
+        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
+
+        printf("type = %s\nfile = %s\nver = %s\n", request->type, request->filename, request->httpversion);
+        fflush(stdout);
+
+        //check that httpversion is "HTTP/1.1"
+        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+        
+        //check that filename is made of 10 ASCII characters
+        }else if(!valid_name(request)){
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+
+        }
+
+        set_flag(request, false);
+    }
+
+    char* token = strtok(buf, "\r\n");
+    while(token){
+        printf("token: %s\n", token);
+        if(strncmp(token, "Content-Length:", 15) == 0){
+            sscanf(token, "%*s %ld", &request->content_length);
+        }else if(strncmp(token, "\r\n", 2)==0){
+            break;
+        }
+        token = strtok(NULL, "\r\n");
+    }
+
+    //
+    printf("content length = %ld\n", request->content_length);
+    //
+}
+
 void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
-    //use comm_fd to comm with client
-    recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
-    parse_request(comm_fd, request, buf);   //Parses the header to the request variables
+    memset(buf, 0, SIZE);
+    int bytes_recv = recv(comm_fd, buf, SIZE, 0); 
+    parse_request(comm_fd, request, buf);
+
+    while(bytes_recv == SIZE){
+        printf("bytes = %d\n", bytes_recv);
+        bytes_recv = recv(comm_fd, buf, SIZE, 0);
+        parse_request(comm_fd, request, buf);
+    }
+
+    print_struct(request);
+
+    // //DANGER ZONE
+    // memset(buf, 0, SIZE);
+
+    // printf("before while\n");
+    // fflush(stdout);
+
+    // while(true){
+    //     // printf("in while!\n");
+    //     fflush(stdout);
+    //     int bytes_recv = recv(comm_fd, buf, SIZE-1, 0);    //while bytes are still being received...
+    //     printf("bytes = %d\n", bytes_recv);
+    //     fflush(stdout);
+
+    //     if(bytes_recv < 0){
+    //         printf("error\n");
+    //         fflush(stdout);
+    //     }
+    //     if(bytes_recv <= 0){
+    //         printf("before break\n");
+    //         break;
+    //     }
+    //     parse_request(comm_fd, request, buf);   //Parses the header to the request variables
+    //     printf("out of parse\n");
+        
+    //     memset(buf, 0, SIZE);
+    //     printf("-----\n");
+    // }
+    
+    // printf("outside of while\n");
+    // fflush(stdout);
+    // //
+    
+
     if(strcmp(request->type, "GET") == 0){
+        printf("GET REQ\n");
         get_request(comm_fd, request, buf);
 
     }else if(strcmp(request->type, "PUT") == 0){
+        printf("PUT REQ\n");
+
         put_request(comm_fd, request, buf);
 
     }else{
+        printf("not GET or PUT\n");
         request->status_code = 400;
         construct_response(comm_fd, request);
     }
@@ -221,7 +344,7 @@ int getPort (char argtwo[]){
 }
 
 int main (int argc, char *argv[]){
-    (void)argc;
+    (void)argc; //get rid of unused argc warning
     int port = getPort(argv[2]);
 
     struct sockaddr_in server_addr;
@@ -261,12 +384,15 @@ int main (int argc, char *argv[]){
     struct sockaddr client_addr;
     socklen_t client_addrlen;
     char buf[SIZE];
+    
     struct httpObject request;
-       
+    
     while(true){
         //accept incoming connection
-        int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+        int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
+        set_flag(&request, true);
         executeFunctions(comm_fd, &request, buf);
+        memset(buf, 0, SIZE);
         close(comm_fd);
     }
     return EXIT_SUCCESS;
