@@ -21,8 +21,9 @@
 
 struct httpObject {
     char type[4];           //PUT, GET
+    char httpversion[9];   //HTTP/1.1
     char filename[10];      //10 character ASCII name
-    int status_code;
+    int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length;
 };
 
@@ -45,9 +46,10 @@ char* getCode(int status_code){
 void construct_response(ssize_t comm_fd, struct httpObject* request){
     char length_string[20];
     sprintf(length_string, "%ld", request->content_length);
-    // itoa(request->content_length, length_string, 10);
+    
     char response[50];
-    strcpy (response,"HTTP/1.1 ");
+    strcpy (response, request->httpversion);
+    strcat (response, " ");
     strcat (response, getCode(request->status_code));
     strcat (response, "\r\n");
     strcat (response, "Content-Length: ");
@@ -57,7 +59,7 @@ void construct_response(ssize_t comm_fd, struct httpObject* request){
 }
 
 void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
-    sscanf(buf, "%s %s", request->type, request->filename);
+    sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
     memmove(request->filename, request->filename+1, strlen(request->filename));
     char* token = strtok(buf, "\r\n");
 	while(token){
@@ -125,7 +127,7 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
                 //     warn("%s", request->filename);
                 // }
                 int write_check = write(file, buf, bytes_read);
-                printf("size of buf = %d", sizeof(buf));
+                printf("size of buf = %ld", sizeof(buf));
                 fflush(stdout);
                 request->content_length = request->content_length - bytes_read;
                 printf("request->content length = %ld", request->content_length);
