@@ -114,7 +114,6 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
     int file = open(request->filename, O_RDONLY);
 
     if (file == -1){
-        // warn("%s", request->filename);
         if(errno==ENOENT){ 
             request->status_code = 404;
         }else if(errno==EACCES){ 
@@ -133,9 +132,6 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 
         while(read(file, buf, 1) != 0){
             send(comm_fd, buf, 1, 0); //printing on server
-            // if (send_check == -1){
-            //     warn("%s", request->filename);
-            // } 
         } 
     }
     
@@ -271,17 +267,6 @@ int main (int argc, char *argv[]){
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
         executeFunctions(comm_fd, &request, buf);
-        //while(true){
-            //use comm_fd to comm with client
-            //int n = recv(comm_fd, buf, SIZE, 0);    //while bytes are still being received...
-            //parse_request(comm_fd, &request, buf); 
-            //fflush(stdin);
-            //if(n == 0) break;
-            //send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
-            //write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
-        //}
-        //receive header
-        //send http response
         close(comm_fd);
     }
     return EXIT_SUCCESS;

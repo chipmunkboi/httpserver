@@ -1,5 +1,5 @@
-<p>Jeffrey Zhang (jzhan182)<br>
-Michelle Yeung (myyeung)<br>
+<p>Michelle Yeung (myyeung)<br>
+Jeffrey Zhang (jzhan182)<br>
 asgn1<br>
 README.md</p>
 
