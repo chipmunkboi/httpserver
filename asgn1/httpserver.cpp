@@ -184,9 +184,6 @@ void executeFunctions(ssize_t comm_fd, struct httpObject* request, char* buf){
         request->status_code = 400;
         construct_response(comm_fd, request);
     }
-    // fflush(stdin);
-    // send(comm_fd, buf, n, 0);               //...send buf contents to comm_fd... (client)
-    // write(STDOUT_FILENO, buf, n);           //...and write buf contents to stdout (server)
 }
 
 //port is set to user-specified number or 80 by default
