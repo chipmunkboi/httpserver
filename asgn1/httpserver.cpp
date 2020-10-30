@@ -25,23 +25,29 @@ struct httpObject {
     char httpversion[9];    //HTTP/1.1
     char filename[12];      //10 character ASCII name
     int status_code;        //200, 201, 400, 403, 404, 500
+    bool exists;            //flag for whether file already exists
     ssize_t content_length;
 };
 
-char* getCode(int status_code){
+const char* getCode(int status_code){
+    char const *code;
     if(status_code==200){
-        return "200 OK";
+        code = "200 OK";
     }else if(status_code==201){
-        return "201 Created";
+        code =  "201 Created";
     }else if(status_code==400){
-        return "400 Bad Request";
+        code = "400 Bad Request";
     }else if(status_code==403){
-        return "403 Forbidden";
+        code = "403 Forbidden";
     }else if(status_code==404){
-        return "404 Not Found";
+        code = "404 Not Found";
     }else if(status_code==500){
-        return "500 Internal Server Error";
+        code = "500 Internal Server Error";
+    }else{
+        code="";
     }
+
+    return code;
 }
 
 void construct_response(ssize_t comm_fd, struct httpObject* request){
@@ -104,7 +110,7 @@ void parse_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 }
 
 void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
-    memset(buf, 0, sizeof(buf));
+    memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
     if (file == -1){
@@ -126,7 +132,7 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
         construct_response(comm_fd, request);
 
         while(read(file, buf, 1) != 0){
-            int send_check = send(comm_fd, buf, 1, 0); //printing on server
+            send(comm_fd, buf, 1, 0); //printing on server
             // if (send_check == -1){
             //     warn("%s", request->filename);
             // } 
@@ -137,7 +143,15 @@ void get_request(ssize_t comm_fd, struct httpObject* request, char* buf){
 }
 
 void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
-    memset(buf, 0, sizeof(buf));
+    memset(buf, 0, SIZE);
+
+    //check whether file already exists
+    if(access(request->filename, F_OK) != -1){
+        request->exists = true;
+    }else{
+        request->exists = false;
+    }
+
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
     if(file == -1){
         request->status_code = 500;
@@ -149,23 +163,29 @@ void put_request(ssize_t comm_fd, struct httpObject* request, char* buf){
         if(request->content_length != 0){          
             while(request->content_length > 0){
                 bytes_read = recv(comm_fd, buf, SIZE, 0);
-                int write_check = write(file, buf, bytes_read);
+                write(file, buf, bytes_read);
                 request->content_length = request->content_length - bytes_read;
             }
 
-        }else{
-            while(bytes_read = recv(comm_fd, buf, SIZE, 0) > 0){
-                int write_check = write(file, buf, bytes_read);
+            //if all bytes were received and written, success
+            if(request->content_length == 0){
+                //if file already exists return success if not return 201
+                if(request->exists == true) request->status_code = 200;
+                else request->status_code = 201;
+            //connected closed before all bytes were sent
+            }else{
+                request->status_code = 500;
             }
-        }
 
-        //if all bytes were received and written, success
-        if(request->content_length == 0) request->status_code = 201;
-        else request->status_code = 500;
-        
+        }else{
+            while((bytes_read = recv(comm_fd, buf, SIZE, 0)) > 0){
+                write(file, buf, bytes_read);
+            }
+            if(request->exists == true) request->status_code = 200;
+            else request->status_code = 201;
+        }       
 
         construct_response(comm_fd, request);
-
     } 
     close(file); 
 }
@@ -205,6 +225,7 @@ int getPort (char argtwo[]){
 }
 
 int main (int argc, char *argv[]){
+    (void)argc;
     int port = getPort(argv[2]);
 
     struct sockaddr_in server_addr;
