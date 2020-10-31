@@ -34,7 +34,7 @@ void clearStruct(struct httpObject* request){
     memset(request->type, 0, SIZE);
     memset(request->httpversion, 0, SIZE);
     memset(request->filename, 0, SIZE);
-    request->status_code = NULL;
+    request->status_code = 0;
     request->exists = false;
     request->first_parse = false;
     request->content_length = NULL;
