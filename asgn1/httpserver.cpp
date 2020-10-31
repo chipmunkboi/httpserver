@@ -18,7 +18,7 @@
 
 #include <stdio.h>      //printf, perror
 
-#define SIZE 5000
+#define SIZE 4096
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -29,6 +29,16 @@ struct httpObject {
     bool first_parse;       
     ssize_t content_length;
 };
+
+void clearStruct(struct httpObject* request){
+    memset(request->type, 0, SIZE);
+    memset(request->httpversion, 0, SIZE);
+    memset(request->filename, 0, SIZE);
+    request->status_code = NULL;
+    request->exists = false;
+    request->first_parse = false;
+    request->content_length = NULL;
+}
 
 const char* getCode (int status_code){
     char const *code;
@@ -64,6 +74,13 @@ void construct_response (ssize_t comm_fd, struct httpObject* request){
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
     send(comm_fd, response, strlen(response), 0);
+}
+
+void syscallError(int fd, struct httpObject* request){
+    if(fd == -1){
+        request->status_code = 500;
+    }
+    construct_response(fd, request);
 }
 
 //returns TRUE if name is valid and FALSE if name is invalid
@@ -124,47 +141,49 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf){
     }
 
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
-    if(file == -1){
-        request->status_code = 500;
-        construct_response(comm_fd, request);
+    syscallError(file, request);
 
-    }else{
-        ssize_t bytes_recv;
+    ssize_t bytes_recv;
 
-        if(request->content_length != 0){          
-            while(request->content_length > 0){
-                bytes_recv = recv(comm_fd, buf, SIZE, 0);
-                write(file, buf, bytes_recv);
-                request->content_length = request->content_length - bytes_recv;
-            }
+    if(request->content_length != 0){          
+        while(request->content_length > 0){
+            bytes_recv = recv(comm_fd, buf, SIZE, 0);
+            syscallError(bytes_recv, request);
 
-            //if all bytes were received and written, success
-            if(request->content_length == 0){
-                //if file already exists return 200, if not return 201
-                if(request->exists == true) request->status_code = 200;
-                else request->status_code = 201;
+            int wfile = write(file, buf, bytes_recv);
+            syscallError(wfile, request);
+            request->content_length = request->content_length - bytes_recv;
+        }
 
-            //connection closed before all bytes were sent
-            }else{
-                request->status_code = 500;
-            }
-
-        //server copies data until read() reads EOF
-        }else{
-            bytes_recv = read(comm_fd, buf, SIZE);
-            write(file, buf, bytes_recv);
-            
-            while(bytes_recv == SIZE){
-                bytes_recv = read(comm_fd, buf, SIZE);
-                write(file, buf, bytes_recv);
-            }
-
+        //if all bytes were received and written, success
+        if(request->content_length == 0){
+            //if file already exists return 200, if not return 201
             if(request->exists == true) request->status_code = 200;
             else request->status_code = 201;
-        }       
 
-        construct_response(comm_fd, request);
-    } 
+        //connection closed before all bytes were sent
+        }else{
+            request->status_code = 500;
+        }
+
+    //server copies data until read() reads EOF
+    }else{
+        bytes_recv = read(comm_fd, buf, SIZE);
+        syscallError(bytes_recv, request);
+        int wfile = write(file, buf, bytes_recv);
+        syscallError(wfile, request);
+
+        while(bytes_recv == SIZE){
+            bytes_recv = read(comm_fd, buf, SIZE);
+            int wfile2 = write(file, buf, bytes_recv);
+            syscallError(wfile2, request);
+        }
+
+        if(request->exists == true) request->status_code = 200;
+        else request->status_code = 201;
+    }       
+
+    construct_response(comm_fd, request);
     close(file); 
 }
 
@@ -173,7 +192,6 @@ void set_flag (struct httpObject* request, bool value){
 }
 
 void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
-    fflush(stdout);
     if(request->first_parse){
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
@@ -181,12 +199,13 @@ void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
         if(strcmp(request->httpversion, "HTTP/1.1") != 0){
             request->status_code = 400;
             construct_response(comm_fd, request);
+            // return;
         
         //check that filename is made of 10 ASCII characters
         }else if(!valid_name(request)){
             request->status_code = 400;
             construct_response(comm_fd, request);
-
+            // return;
         }
 
         set_flag(request, false);
@@ -206,11 +225,18 @@ void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
 void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf){
     memset(buf, 0, SIZE);
     int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
+    syscallError(bytes_recv, request);
     parse_request(comm_fd, request, buf);
+
+    // if(!valid_name(request)) return;
+    // if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
 
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
+        syscallError(bytes_recv, request);
+
         parse_request(comm_fd, request, buf);       //parse for content length
+        memset(buf, 0, SIZE);
     }
 
     if(strcmp(request->type, "GET") == 0){
@@ -220,7 +246,7 @@ void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf){
         put_request(comm_fd, request, buf);
 
     }else{
-        request->status_code = 400;
+        request->status_code = 500;
         construct_response(comm_fd, request);
     }
 }
@@ -292,6 +318,7 @@ int main (int argc, char *argv[]){
         set_flag(&request, true);
         executeFunctions(comm_fd, &request, buf);
         memset(buf, 0, SIZE);
+        clearStruct(&request);
         close(comm_fd);
     }
     return EXIT_SUCCESS;
