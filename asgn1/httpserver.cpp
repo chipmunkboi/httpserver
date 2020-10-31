@@ -85,8 +85,9 @@ void syscallError(int fd, struct httpObject* request){
 
 //returns TRUE if name is valid and FALSE if name is invalid
 bool valid_name (struct httpObject* request){
-    if(request->filename[0] != '/') return false;
-    else memmove(request->filename, request->filename+1, strlen(request->filename));
+    if(request->filename[0] == '/'){
+        memmove(request->filename, request->filename+1, strlen(request->filename));
+    }
     
     //check that name is 10 char long
     if(strlen(request->filename) != 10){
@@ -228,8 +229,8 @@ void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf){
     syscallError(bytes_recv, request);
     parse_request(comm_fd, request, buf);
 
-    // if(!valid_name(request)) return;
-    // if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
+    if(!valid_name(request)) return;
+    if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
 
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
