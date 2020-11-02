@@ -22,3 +22,9 @@ buffer size happens to be reached with only part of content-length present
 (e.g. "Content-Length: 10" when the request specifies "Content-Length: 100"),
 it will not be detected and the file will will not receive and write all the
 bytes that it should.
+
+Another issue is if "Content-Length" in the header is overridden to a number
+that is greater than the actual content length of the file, PUT will infinitely
+loop. This is due to the way we recv and write the buffer. Everytime we write 
+bytes, we subtract that from the header-specified content-length. If the content-
+length is too large, we will never recv enough bytes to exit the loop.
