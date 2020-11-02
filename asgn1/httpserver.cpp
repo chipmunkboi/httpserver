@@ -24,10 +24,14 @@ struct httpObject {
     char type[4];           //PUT, GET
     char httpversion[9];    //HTTP/1.1
     char filename[12];      //10 character ASCII name
-    int status_code;        //200, 201, 400, 403, 404, 500
+    int status_code;        //200, 201, 400, 403, 404, 500    
+    ssize_t content_length; //length of file
+};
+
+struct flags {
     bool exists;            //flag for whether file already exists
-    bool first_parse;       
-    ssize_t content_length;
+    bool first_parse;       //flag for parsing first line of header
+    bool good_name;         //flag for whether name is valid
 };
 
 void clearStruct(struct httpObject* request){
@@ -35,9 +39,13 @@ void clearStruct(struct httpObject* request){
     memset(request->httpversion, 0, SIZE);
     memset(request->filename, 0, SIZE);
     request->status_code = 0;
-    request->exists = false;
-    request->first_parse = false;
     request->content_length = NULL;
+}
+
+void clearFlags(struct flags* flag){
+    flag->exists = false;
+    flag->first_parse = true;
+    flag->good_name = false;
 }
 
 const char* getCode (int status_code){
@@ -84,21 +92,26 @@ void syscallError(int fd, struct httpObject* request){
 }
 
 //returns TRUE if name is valid and FALSE if name is invalid
-bool valid_name (struct httpObject* request){
+bool valid_name (struct httpObject* request, struct flags* flag){
     if(request->filename[0] == '/'){
         memmove(request->filename, request->filename+1, strlen(request->filename));
     }
     
     //check that name is 10 char long
     if(strlen(request->filename) != 10){
+        flag->good_name = false;
         return false;
     }
 
     //check that all chars are ASCII chars
     for(int i=0; i<10; i++){
-        if(!isalnum(request->filename[i])) return false;
+        if(!isalnum(request->filename[i])){
+            flag->good_name = false;
+            return false;
+        }
     }
 
+    flag->good_name = true;
     return true;
 }
 
@@ -131,14 +144,14 @@ void get_request (ssize_t comm_fd, struct httpObject* request, char* buf){
     close(file);
 }
 
-void put_request (ssize_t comm_fd, struct httpObject* request, char* buf){
+void put_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
 
     //check whether file already exists
     if(access(request->filename, F_OK) != -1){
-        request->exists = true;
+        flag->exists = true;
     }else{
-        request->exists = false;
+        flag->exists = false;
     }
 
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
@@ -159,7 +172,7 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf){
         //if all bytes were received and written, success
         if(request->content_length == 0){
             //if file already exists return 200, if not return 201
-            if(request->exists == true) request->status_code = 200;
+            if(flag->exists == true) request->status_code = 200;
             else request->status_code = 201;
 
         //connection closed before all bytes were sent
@@ -180,7 +193,7 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf){
             syscallError(wfile2, request);
         }
 
-        if(request->exists == true) request->status_code = 200;
+        if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
     }       
 
@@ -188,12 +201,12 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf){
     close(file); 
 }
 
-void set_flag (struct httpObject* request, bool value){
-    request->first_parse = value;
+void set_flag (struct flags* flag, bool value){
+    flag->first_parse = value;
 }
 
-void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
-    if(request->first_parse){
+void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    if(flag->first_parse){
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
         //check that httpversion is "HTTP/1.1"
@@ -203,13 +216,13 @@ void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
             // return;
         
         //check that filename is made of 10 ASCII characters
-        }else if(!valid_name(request)){
+        }else if(!valid_name(request, flag)){
             request->status_code = 400;
             construct_response(comm_fd, request);
             // return;
         }
 
-        set_flag(request, false);
+        set_flag(flag, false);
     }
 
     char* token = strtok(buf, "\r\n");
@@ -223,20 +236,20 @@ void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf){
     }
 }
 
-void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf){
+void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
     int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
     syscallError(bytes_recv, request);
-    parse_request(comm_fd, request, buf);
+    parse_request(comm_fd, request, buf, flag);
 
-    if(!valid_name(request)) return;
+    if(!valid_name(request, flag)) return;
     if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
 
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(bytes_recv, request);
 
-        parse_request(comm_fd, request, buf);       //parse for content length
+        parse_request(comm_fd, request, buf, flag);       //parse for content length
         memset(buf, 0, SIZE);
     }
 
@@ -244,7 +257,7 @@ void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf){
         get_request(comm_fd, request, buf);
 
     }else if(strcmp(request->type, "PUT") == 0){
-        put_request(comm_fd, request, buf);
+        put_request(comm_fd, request, buf, flag);
 
     }else{
         request->status_code = 500;
@@ -312,12 +325,13 @@ int main (int argc, char *argv[]){
     char buf[SIZE];
     
     struct httpObject request;
-    
+    struct flags flag;
+
     while(true){
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
-        set_flag(&request, true);
-        executeFunctions(comm_fd, &request, buf);
+        set_flag(&flag, true);
+        executeFunctions(comm_fd, &request, buf, &flag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
         close(comm_fd);
