@@ -34,6 +34,13 @@ struct flags {
     bool good_name;         //flag for whether name is valid
 };
 
+void printStruct(struct httpObject* request){
+    printf("type: %s\n", request->type);
+    printf("ver: %s\n", request->httpversion);
+    printf("file: %s\n", request->filename);
+    printf("content length: %ld\n", request->content_length);
+}
+
 void clearStruct(struct httpObject* request){
     memset(request->type, 0, SIZE);
     memset(request->httpversion, 0, SIZE);
@@ -69,7 +76,8 @@ const char* getCode (int status_code){
     return code;
 }
 
-void construct_response (ssize_t comm_fd, struct httpObject* request){
+void construct_response (int comm_fd, struct httpObject* request){
+    printStruct(request);
     char length_string[20];
     sprintf(length_string, "%ld", request->content_length);
     
@@ -81,13 +89,24 @@ void construct_response (ssize_t comm_fd, struct httpObject* request){
     strcat (response, "Content-Length: ");
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
+
+    //
+    printf("RESPONSE:\n");
+    printf("%s\n", response);
+    fflush(stdout);
+    //
     send(comm_fd, response, strlen(response), 0);
 }
 
 void syscallError(int fd, struct httpObject* request){
+    printf("\n\nin syscall error\n");
+    fflush(stdout);
     if(fd == -1){
         request->status_code = 500;
     }
+
+    printf("errno: %s\n", strerror(errno));
+    fflush(stdout);
     construct_response(fd, request);
 }
 
@@ -115,7 +134,7 @@ bool valid_name (struct httpObject* request, struct flags* flag){
     return true;
 }
 
-void get_request (ssize_t comm_fd, struct httpObject* request, char* buf){
+void get_request (int comm_fd, struct httpObject* request, char* buf){
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -144,7 +163,9 @@ void get_request (ssize_t comm_fd, struct httpObject* request, char* buf){
     close(file);
 }
 
-void put_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    printf("in PUT\n");
+    fflush(stdout);
     memset(buf, 0, SIZE);
 
     //check whether file already exists
@@ -154,14 +175,22 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct
         flag->exists = false;
     }
 
+    printf("before open\n");
+    fflush(stdout);
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
+    printf("after open\n");
+    fflush(stdout);
 
-    ssize_t bytes_recv;
+    int bytes_recv;
 
     if(request->content_length != 0){          
         while(request->content_length > 0){
-            bytes_recv = recv(comm_fd, buf, SIZE, 0);
+            if(request->content_length < SIZE){
+                bytes_recv = recv(comm_fd, buf, request->content_length, 0);
+            }else{
+                bytes_recv = recv(comm_fd, buf, SIZE, 0);
+            }
             syscallError(bytes_recv, request);
 
             int wfile = write(file, buf, bytes_recv);
@@ -169,16 +198,9 @@ void put_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct
             request->content_length = request->content_length - bytes_recv;
         }
 
-        //if all bytes were received and written, success
-        if(request->content_length == 0){
-            //if file already exists return 200, if not return 201
-            if(flag->exists == true) request->status_code = 200;
-            else request->status_code = 201;
-
-        //connection closed before all bytes were sent
-        }else{
-            request->status_code = 500;
-        }
+        //if file already exists return 200, if not return 201
+        if(flag->exists == true) request->status_code = 200;
+        else request->status_code = 201;
 
     //server copies data until read() reads EOF
     }else{
@@ -205,7 +227,7 @@ void set_flag (struct flags* flag, bool value){
     flag->first_parse = value;
 }
 
-void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     if(flag->first_parse){
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
@@ -236,9 +258,11 @@ void parse_request (ssize_t comm_fd, struct httpObject* request, char* buf, stru
     }
 }
 
-void executeFunctions (ssize_t comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
     int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
+    printf("Bytes recv: %d\n", bytes_recv);
+    fflush(stdout);
     syscallError(bytes_recv, request);
     parse_request(comm_fd, request, buf, flag);
 
