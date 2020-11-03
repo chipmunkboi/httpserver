@@ -18,7 +18,7 @@
 
 #include <stdio.h>      //printf, perror
 
-#define SIZE 4096       //4 kb
+#define SIZE 4096       //4 KB
 
 struct httpObject {
     char type[4];           //PUT, GET
