@@ -9,8 +9,7 @@
 #include <unistd.h>     //write
 #include <fcntl.h>      //open
 #include <ctype.h>      //isalnum
-
-#include <errno.h>
+#include <errno.h>      
 #include <err.h>
 
 #include <netinet/in.h> //inet_aton
@@ -34,6 +33,7 @@ struct flags {
     bool good_name;         //flag for whether name is valid
 };
 
+//used to check that all parts of struct are correct
 void printStruct(struct httpObject* request){
     printf("type: %s\n", request->type);
     printf("ver: %s\n", request->httpversion);
@@ -77,7 +77,6 @@ const char* getCode (int status_code){
 }
 
 void construct_response (int comm_fd, struct httpObject* request){
-    printStruct(request);
     char length_string[20];
     sprintf(length_string, "%ld", request->content_length);
     
@@ -90,24 +89,16 @@ void construct_response (int comm_fd, struct httpObject* request){
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
 
-    //
-    printf("RESPONSE:\n");
-    printf("%s\n", response);
-    fflush(stdout);
-    //
     send(comm_fd, response, strlen(response), 0);
 }
 
 void syscallError(int fd, struct httpObject* request){
-    printf("\n\nin syscall error\n");
-    fflush(stdout);
     if(fd == -1){
         request->status_code = 500;
+        // printf("errno %d: %s\n", errno, strerror(errno));
+        // fflush(stdout);
+        construct_response(fd, request);
     }
-
-    printf("errno: %s\n", strerror(errno));
-    fflush(stdout);
-    construct_response(fd, request);
 }
 
 //returns TRUE if name is valid and FALSE if name is invalid
@@ -164,26 +155,21 @@ void get_request (int comm_fd, struct httpObject* request, char* buf){
 }
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
-    printf("in PUT\n");
-    fflush(stdout);
     memset(buf, 0, SIZE);
 
     //check whether file already exists
-    if(access(request->filename, F_OK) != -1){
+    int check;
+    if((check = access(request->filename, F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
+    syscallError(check, request);
 
-    printf("before open\n");
-    fflush(stdout);
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
-    printf("after open\n");
-    fflush(stdout);
 
     int bytes_recv;
-
     if(request->content_length != 0){          
         while(request->content_length > 0){
             if(request->content_length < SIZE){
@@ -219,7 +205,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
             syscallError(wfile2, request);
-        }   
+        }
 
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
@@ -229,7 +215,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     close(file); 
 }
 
-void set_flag (struct flags* flag, bool value){
+void set_first_parse (struct flags* flag, bool value){
     flag->first_parse = value;
 }
 
@@ -250,7 +236,7 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
             // return;
         }
 
-        set_flag(flag, false);
+        set_first_parse(flag, false);
     }
 
     char* token = strtok(buf, "\r\n");
@@ -266,10 +252,10 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
 
 void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
-    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
-    printf("Bytes recv: %d\n", bytes_recv);
-    fflush(stdout);
+
+    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once   
     syscallError(bytes_recv, request);
+
     parse_request(comm_fd, request, buf, flag);
 
     if(!valid_name(request, flag)) return;
@@ -327,26 +313,26 @@ int main (int argc, char *argv[]){
     //create server socket file descriptor
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0){
-        perror("server_socket");
+        // perror("server_socket");
         exit(EXIT_FAILURE);
     }
 
     //setsockopt: helps in reusing address and port
     int opt = 1;
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
-        perror("setsockopt");
+        // perror("setsockopt");
         exit(EXIT_FAILURE);
     }
 
     //bind server address to open socket
     if (bind(server_socket, (struct sockaddr *)&server_addr, addrlen) < 0){
-        perror("bind");
+        // perror("bind");
         exit(EXIT_FAILURE);
     }
 
     //listen for incoming connections
     if (listen(server_socket, 500) < 0){
-        perror("listen");
+        // perror("listen");
         exit(EXIT_FAILURE);
     }
 
@@ -360,7 +346,7 @@ int main (int argc, char *argv[]){
     while(true){
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
-        set_flag(&flag, true);
+        set_first_parse(&flag, true);
         executeFunctions(comm_fd, &request, buf, &flag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
