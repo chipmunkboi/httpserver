@@ -18,7 +18,7 @@
 
 #include <stdio.h>      //printf, perror
 
-#define SIZE 4096
+#define SIZE 4096       //4 kb
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -204,7 +204,8 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
     //server copies data until read() reads EOF
     }else{
-        bytes_recv = read(comm_fd, buf, SIZE);
+        //REASON FOR KEEPING IS IN README
+        /*bytes_recv = read(comm_fd, buf, SIZE);
         syscallError(bytes_recv, request);
         int wfile = write(file, buf, bytes_recv);
         syscallError(wfile, request);
@@ -213,7 +214,12 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
             bytes_recv = read(comm_fd, buf, SIZE);
             int wfile2 = write(file, buf, bytes_recv);
             syscallError(wfile2, request);
-        }
+        }*/
+
+        while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
+            int wfile2 = write(file, buf, bytes_recv);
+            syscallError(wfile2, request);
+        }   
 
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;

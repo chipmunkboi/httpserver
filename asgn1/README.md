@@ -15,7 +15,7 @@ README.md</p>
     - port number argument is optional
 
 **Known limitations/issues:**
-One known issue with the code is that if the request header contains
+A limitation with the code is that if the request header contains
 "Content-Length: x", the code may not be able to extract it 100% of the 
 time. This is because of the way we recv and parse the buffer. If the max
 buffer size happens to be reached with only part of content-length present 
@@ -28,3 +28,12 @@ that is greater than the actual content length of the file, PUT will infinitely
 loop. This is due to the way we recv and write the buffer. Everytime we write 
 bytes, we subtract that from the header-specified content-length. If the content-
 length is too large, we will never recv enough bytes to exit the loop.
+
+Finally, there was some confusion around implementing PUT requests with no 
+content-length header. We had written two implementations:
+    1. continues reading and writing until the whole file is written (EOF is read)
+    2. continues reading and writing until the client closes the connection
+After reading the assignment specifications carefully, many times, and combing through
+all related Piazza posts (this one specifically convinced us: 
+https://piazza.com/class/kfqgk8ox2mi4a1?cid=188), we decided to keep the 
+latter implementation.
