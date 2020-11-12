@@ -297,6 +297,7 @@ int main (int argc, char *argv[]){
 
 //----------------for debugging------------------------------
     printf("-------------------------\n");
+    printf("ALL ARGS:\n");
     for(int i=0; i<argc; i++){
         printf("argv[%d]: %s\n", i, argv[i]);
         fflush(stdout);
@@ -337,6 +338,7 @@ int main (int argc, char *argv[]){
 //----------------for debugging------------------------------
     printf("\noptind = %d\nargc = %d\n\n", optind, argc);
     printf("-------------------------\n");
+    printf("REMAINING ARGS TO PARSE:\n");
     for(int i=optind; i<argc; i++){
         printf("argv[%d]: %s\n", i, argv[i]);
         fflush(stdout);
