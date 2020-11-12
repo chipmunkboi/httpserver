@@ -283,9 +283,20 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 }
 
 //port is set to user-specified number or 80 by default
-int checkPort (int port){
-    if (port < 1024){
-        exit(EXIT_FAILURE);
+int getPort (int argc, char *argv[]){
+    int port;
+
+    if((optind++) == (argc-1)){             //port number not specified
+        port = 80;
+        printf("(1) port = %d\n", port);
+    }else{                                  //port number specified
+        printf("argv[%d] = %s\n", optind, argv[optind]);
+        port = atoi(argv[optind]);
+
+        if (port < 1024){
+            exit(EXIT_FAILURE);
+            printf("(2) port = %d\n", port);
+        }
     }
 
     return port;
@@ -351,15 +362,8 @@ int main (int argc, char *argv[]){
     printf("hostaddr = %s\n", hostaddr);
 
     //get port number
-    int port;
-    if((optind++) == (argc-1)){             //port number not specified
-        port = 80;
-        printf("(1) port = %d\n", port);
-    }else{                                  //port number specified
-        printf("argv[%d] = %s\n", optind, argv[optind]);
-        port = checkPort(atoi(argv[optind]));
-        printf("(2) port = %d\n", port);
-    }
+    int port = getPort(argc, argv);
+    printf("port = %d\n", port);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
