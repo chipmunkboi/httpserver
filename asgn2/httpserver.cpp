@@ -24,7 +24,7 @@ struct httpObject {
     char type[4];           //PUT, GET
     char httpversion[9];    //HTTP/1.1
     char filename[12];      //10 character ASCII name
-    int status_code;        //200, 201, 400, 403, 404, 500    
+    int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length; //length of file
 };
 
@@ -266,7 +266,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(bytes_recv, request);
 
-        parse_request(comm_fd, request, buf, flag);       //parse for content length
+        parse_request(comm_fd, request, buf, flag); //parse for content length
         memset(buf, 0, SIZE);
     }
 
@@ -284,12 +284,8 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
 //port is set to user-specified number or 80 by default
 int checkPort (int port){
-    if (port != NULL){
-        if (port < 1024){
-            exit(EXIT_FAILURE);
-        }
-    }else{
-        port = 80;
+    if (port < 1024){
+        exit(EXIT_FAILURE);
     }
 
     return port;
@@ -297,43 +293,77 @@ int checkPort (int port){
 
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
-    int option, port;
+    int option, numworkers = 0;
 
+//----------------for debugging------------------------------
+    printf("-------------------------\n");
     for(int i=0; i<argc; i++){
         printf("argv[%d]: %s\n", i, argv[i]);
         fflush(stdout);
     }
+    printf("-------------------------\n\n");
+//-----------------------------------------------------------
+
+    //optind:          0            1           2        3  4    5
+    //max argc = 6:   ./httpserver  localhost   8080    -N  5   -r
+    //if argc > max args, we already know command is wrong
+    if(argc > 6){
+        printf("too many args!\n");
+        exit(EXIT_FAILURE);
+    }
     
+    //parse command for -N and -r
     while((option = getopt(argc, argv, "N:r")) != -1){
         if(option == 'r'){
             printf("has r flag\n");
-        }else if(option == 'N'){
-            printf("has %s arg\n", optarg);
+
+        }else if(option == 'N'){     
+            numworkers = atoi(optarg);
+            if(numworkers == 0){ //https://piazza.com/class/kfqgk8ox2mi4a1?cid=267
+                printf("error: can't have 0 worker threads\n");
+                exit(EXIT_FAILURE);
+            }   
+
         }else{
             printf("error: bad flag\n");
+            exit(EXIT_FAILURE);
         }
     }
 
+    //if -N was not present, default is 4
+    if(numworkers == 0) numworkers = 4;
+    printf("numworkers = %d\n", numworkers);
 
-    // // ./httpserver localhost 8080 -r
-    // if(atoi(argv[2]) == checkPort(atoi(arg[2]))){ //if "8080" == checkport("8080")
-    //     valid!
-    // }else if(optind == argc){
-    //     port = 80;
-    // }
-    // else{error}
-    
-    // if(optind == argc){
-    //     port = 80;
-    // }else{
-    //     if(optind)
-    // }
+//----------------for debugging------------------------------
+    printf("\noptind = %d\nargc = %d\n\n", optind, argc);
+    printf("-------------------------\n");
+    for(int i=optind; i<argc; i++){
+        printf("argv[%d]: %s\n", i, argv[i]);
+        fflush(stdout);
+    }
+    printf("-------------------------\n\n");
+//-----------------------------------------------------------
+
+    //get host address (e.g. localhost)
+    char* hostaddr = argv[optind];
+    printf("hostaddr = %s\n", hostaddr);
+
+    //get port number
+    int port;
+    if((optind++) == (argc-1)){             //port number not specified
+        port = 80;
+        printf("(1) port = %d\n", port);
+    }else{                                  //port number specified
+        printf("argv[%d] = %s\n", optind, argv[optind]);
+        port = checkPort(atoi(argv[optind]));
+        printf("(2) port = %d\n", port);
+    }
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
         
     server_addr.sin_family = AF_INET;   
-    inet_aton(argv[1], &server_addr.sin_addr);
+    inet_aton(hostaddr, &server_addr.sin_addr); //change this; cant use argv[1] anymore
     server_addr.sin_port = htons(port);
     socklen_t addrlen = sizeof(server_addr);
 
