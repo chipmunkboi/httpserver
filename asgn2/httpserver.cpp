@@ -16,6 +16,7 @@
 #include <arpa/inet.h>  //inet_aton
 
 #include <stdio.h>      //printf, perror
+#include <ctype.h>      //for isDigit()
 
 #define SIZE 4096       //4 KB
 
@@ -282,12 +283,8 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 }
 
 //port is set to user-specified number or 80 by default
-int getPort (char argtwo[]){
-    int port;
-
-    if (argtwo != NULL){
-        port = atoi(argtwo);
-
+int checkPort (int port){
+    if (port != NULL){
         if (port < 1024){
             exit(EXIT_FAILURE);
         }
@@ -300,7 +297,37 @@ int getPort (char argtwo[]){
 
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
-    int port = getPort(argv[2]);
+    int option, port;
+
+    for(int i=0; i<argc; i++){
+        printf("argv[%d]: %s\n", i, argv[i]);
+        fflush(stdout);
+    }
+    
+    while((option = getopt(argc, argv, "N:r")) != -1){
+        if(option == 'r'){
+            printf("has r flag\n");
+        }else if(option == 'N'){
+            printf("has %s arg\n", optarg);
+        }else{
+            printf("error: bad flag\n");
+        }
+    }
+
+
+    // // ./httpserver localhost 8080 -r
+    // if(atoi(argv[2]) == checkPort(atoi(arg[2]))){ //if "8080" == checkport("8080")
+    //     valid!
+    // }else if(optind == argc){
+    //     port = 80;
+    // }
+    // else{error}
+    
+    // if(optind == argc){
+    //     port = 80;
+    // }else{
+    //     if(optind)
+    // }
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -342,8 +369,10 @@ int main (int argc, char *argv[]){
     
     struct httpObject request;
     struct flags flag;
-
+    
     while(true){
+        printf("waiting for a connection\n");
+        fflush(stdout);
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
         set_first_parse(&flag, true);
