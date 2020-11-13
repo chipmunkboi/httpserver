@@ -17,8 +17,13 @@
 
 #include <stdio.h>      //printf, perror
 #include <ctype.h>      //for isDigit()
+#include <pthread.h>    //for threads
 
-#define SIZE 4096       //4 KB
+#include <queue>
+
+#define SIZE 16384       //16 KB
+using namespace std;
+queue <int> commQ;
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -34,12 +39,21 @@ struct flags {
     bool good_name;         //flag for whether name is valid
 };
 
+struct synchronization{
+    // Declaration of thread condition variable 
+    pthread_cond_t newReq = PTHREAD_COND_INITIALIZER; 
+    // declaring mutex 
+    pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER; 
+    char* string = "hello";
+};
+
 //used to check that all parts of struct are correct
 void printStruct(struct httpObject* request){
     printf("type: %s\n", request->type);
     printf("ver: %s\n", request->httpversion);
     printf("file: %s\n", request->filename);
     printf("content length: %ld\n", request->content_length);
+    fflush(stdout);
 }
 
 void clearStruct(struct httpObject* request){
@@ -127,6 +141,8 @@ bool valid_name (struct httpObject* request, struct flags* flag){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf){
+    // printf("in GET\n");
+    // fflush(stdout);
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -221,6 +237,8 @@ void set_first_parse (struct flags* flag, bool value){
 }
 
 void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    // printf("%s\n", buf);
+    // fflush(stdout);
     if(flag->first_parse){
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
@@ -252,12 +270,19 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
 }
 
 void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    // printf("in execFunc()\n");
+    // fflush(stdout);
+
     memset(buf, 0, SIZE);
 
-    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once   
+    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once 
+    // printf("comm_fd in exefunct %d\n", comm_fd);
+    // fflush(stdout);
     syscallError(bytes_recv, request);
 
     parse_request(comm_fd, request, buf, flag);
+
+    printStruct(request);
 
     if(!valid_name(request, flag)) return;
     if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
@@ -302,18 +327,71 @@ int getPort (int argc, char *argv[]){
     return port;
 }
 
+void* workerThread(void* arg){
+    // printf("*comm_fd = %d\n", comm_fd);
+    // fflush(stdout);
+
+    printf("string = %s\n", ((struct synchronization*)arg)->string);
+
+    //might need to be a pointer
+    struct synchronization* spoint = (struct synchronization*)arg;
+    pthread_cond_t *newReq = &spoint->newReq;
+    pthread_mutex_t *queueLock = &spoint->queueLock;
+    
+    //handled by worker thread
+    //worker handles mutex to determine to wait or run
+    //create one array for each struct
+    struct httpObject request;
+    struct flags flag;
+    char buf[SIZE];
+    int comm_fd;
+    while(true){
+
+        printf("Start of workerthread while loop\n");
+        fflush(stdout);
+
+        pthread_mutex_lock(queueLock);
+        //thread sleeps until an fd is pushed into queue
+        while(commQ.empty()){
+            pthread_cond_wait(newReq, queueLock);
+        }
+        
+        comm_fd = commQ.front(); //front of queue has oldest fd
+        commQ.pop();
+        pthread_mutex_unlock(queueLock);
+
+        set_first_parse(&flag, true);
+        executeFunctions(comm_fd, &request, buf, &flag);
+        memset(buf, 0, SIZE);
+        clearStruct(&request);
+        // pthread_mutex_unlock(&lock);
+
+        printf("End of Workerthread %d\n", comm_fd);
+        fflush(stdout);
+
+        close(comm_fd);
+    }
+}
+
+// void* sleepThread(void *sink){
+//     struct synchronization *temp = sink;
+//     pthread_cond_wait(&temp->cond, &temp->lock);
+//     workerThread(comm_fd);
+//     close(comm_fd);
+// }
+
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
     int option, numworkers = 0;
 
 //----------------for debugging------------------------------
-    printf("-------------------------\n");
-    printf("ALL ARGS:\n");
-    for(int i=0; i<argc; i++){
-        printf("argv[%d]: %s\n", i, argv[i]);
-        fflush(stdout);
-    }
-    printf("-------------------------\n\n");
+    // printf("-------------------------\n");
+    // printf("ALL ARGS:\n");
+    // for(int i=0; i<argc; i++){
+    //     printf("argv[%d]: %s\n", i, argv[i]);
+    //     fflush(stdout);
+    // }
+    // printf("-------------------------\n\n");
 //-----------------------------------------------------------
 
     //optind:          0            1           2        3  4    5
@@ -327,7 +405,7 @@ int main (int argc, char *argv[]){
     //parse command for -N and -r
     while((option = getopt(argc, argv, "N:r")) != -1){
         if(option == 'r'){
-            printf("has r flag\n");
+            // printf("has r flag\n");
 
         }else if(option == 'N'){     
             numworkers = atoi(optarg);
@@ -347,14 +425,14 @@ int main (int argc, char *argv[]){
     printf("numworkers = %d\n", numworkers);
 
 //----------------for debugging------------------------------
-    printf("\noptind = %d\nargc = %d\n\n", optind, argc);
-    printf("-------------------------\n");
-    printf("REMAINING ARGS TO PARSE:\n");
-    for(int i=optind; i<argc; i++){
-        printf("argv[%d]: %s\n", i, argv[i]);
-        fflush(stdout);
-    }
-    printf("-------------------------\n\n");
+    // printf("\noptind = %d\nargc = %d\n\n", optind, argc);
+    // printf("-------------------------\n");
+    // printf("REMAINING ARGS TO PARSE:\n");
+    // for(int i=optind; i<argc; i++){
+    //     printf("argv[%d]: %s\n", i, argv[i]);
+    //     fflush(stdout);
+    // }
+    // printf("-------------------------\n\n");
 //-----------------------------------------------------------
 
     //get host address (e.g. localhost)
@@ -401,21 +479,42 @@ int main (int argc, char *argv[]){
 
     struct sockaddr client_addr;
     socklen_t client_addrlen;
-    char buf[SIZE];
+
+    // Create numworkers threads from pthread_t []
+    pthread_t tid[numworkers];
+    struct synchronization sink;
+
+    for(int i=0; i<numworkers; i++){
+        int tcreateerror = pthread_create(&(tid[i]), NULL, workerThread, (void*)(&sink));
+        if(tcreateerror != 0){
+            printf("\nThread %d cannot be created: [%s]", i, strerror(tcreateerror));
+            fflush(stdout);
+        }
+    }
+    //at end of loop, we will have N worker threads that are sleeping
     
-    struct httpObject request;
-    struct flags flag;
-    
+    //dispatch thread
     while(true){
         printf("waiting for a connection\n");
         fflush(stdout);
         //accept incoming connection
-        int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
-        set_first_parse(&flag, true);
-        executeFunctions(comm_fd, &request, buf, &flag);
-        memset(buf, 0, SIZE);
-        clearStruct(&request);
-        close(comm_fd);
+        int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //static
+        // printf("comm_fd in main: %d\n", comm_fd);
+        // fflush(stdout);
+        
+        //lock queue and push comm_fd into queue
+        pthread_mutex_lock(&sink.queueLock);
+        commQ.push(comm_fd);
+        //  printf("inside lock queue top is: %d\n", commQ.front());
+        pthread_mutex_unlock(&sink.queueLock);
+
+        //alert one thread in pool to handle connection here
+        printf("\nAbout to signal %d\n", comm_fd);
+        fflush(stdout);
+        pthread_cond_signal(&sink.newReq);
+        printf("\nAfter signal %d\n", comm_fd);
+        fflush(stdout);
     }
+
     return EXIT_SUCCESS;
 }
