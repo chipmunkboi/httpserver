@@ -19,6 +19,8 @@
 #include <ctype.h>      //for isDigit()
 #include <pthread.h>    //for threads
 
+#include <dirent.h>     //for parsing directory
+
 #include <queue>
 
 #define SIZE 16384       //16 KB
@@ -44,7 +46,7 @@ struct synchronization{
     pthread_cond_t newReq = PTHREAD_COND_INITIALIZER; 
     // declaring mutex 
     pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER; 
-    char* string = "hello";
+    // char* string = "hello";
 };
 
 //used to check that all parts of struct are correct
@@ -309,7 +311,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         put_request(comm_fd, request, buf, flag);
 
     }else{
-        request->status_code = 400;
+        request->status_code = 500; 
         construct_response(comm_fd, request);
     }
 }
@@ -338,7 +340,7 @@ void* workerThread(void* arg){
     // printf("*comm_fd = %d\n", comm_fd);
     // fflush(stdout);
 
-    printf("string = %s\n", ((struct synchronization*)arg)->string);
+    // printf("string = %s\n", ((struct synchronization*)arg)->string);
 
     //might need to be a pointer
     struct synchronization* spoint = (struct synchronization*)arg;
@@ -359,7 +361,7 @@ void* workerThread(void* arg){
 
         pthread_mutex_lock(queueLock);
         //thread sleeps until an fd is pushed into queue
-        if(commQ.empty()){
+        while(commQ.empty()){
             pthread_cond_wait(newReq, queueLock);
         }
         
@@ -378,6 +380,50 @@ void* workerThread(void* arg){
 
         close(comm_fd);
     }
+}
+
+void copyFiles(char* filename, int source){
+    char buffer[SIZE];
+    
+    //Create the path
+    char copy1[50] = "./copy1/";
+    char copy2[50] = "./copy2/";
+    char copy3[50] = "./copy3/";
+
+    //Append file name to path
+    strcat(copy1, filename);
+    strcat(copy2, filename);
+    strcat(copy3, filename);
+
+    //
+    printf("%s\n", copy1);
+    printf("%s\n", copy2);
+    printf("%s\n", copy3);
+    fflush(stdout);
+    //
+    
+    //Create 3 copies of the files
+    int des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+    int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
+    int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
+    if(des1==-1 | des2==-1 | des3==-1){
+        perror("opening copy folders");
+    }
+
+    //Copies content from the current file to all 3 files
+    while(read(source, buffer, 1) != 0){
+        int write1 = write(des1, buffer, 1);
+        int write2 = write(des2, buffer, 1);
+        int write3 = write(des3, buffer, 1);
+        if(write1==-1 | write2==-1 | write3==-1){
+            perror("writing to copy folders");
+        }
+    }
+
+    //close files
+    close(des1);
+    close(des2);
+    close(des3);
 }
 
 // void* sleepThread(void *sink){
@@ -408,11 +454,14 @@ int main (int argc, char *argv[]){
         printf("too many args!\n");
         exit(EXIT_FAILURE);
     }
+
+    bool rflag = false;
     
     //parse command for -N and -r
     while((option = getopt(argc, argv, "N:r")) != -1){
         if(option == 'r'){
             // printf("has r flag\n");
+            rflag = true;
 
         }else if(option == 'N'){     
             numworkers = atoi(optarg);
@@ -424,6 +473,42 @@ int main (int argc, char *argv[]){
         }else{
             printf("error: bad flag\n");
             exit(EXIT_FAILURE);
+        }
+    }
+
+    //if -r is present, make three different copies of all files in the server
+    if(rflag == true){
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(".");
+
+        //Loop through all files in the server directory
+        if(d){
+            while((dir = readdir(d)) != NULL){ 
+                
+                // printf("%s\n", dir->d_name);
+                // fflush(stdout);
+                //check if filename is valid
+                int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                if(source == -1){
+                    perror("can't open source file");
+                }
+
+                //check if file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                printf("isfile = %d\n", isfile);
+
+                //file is a directory, go to next file
+                if(isfile==0){
+                    continue;
+                }
+
+                copyFiles(dir->d_name, source);
+                close(source);
+            }  
+            closedir(d); 
         }
     }
 
