@@ -176,14 +176,16 @@ void get_request (int comm_fd, struct httpObject* request, char* buf){
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
 
+    // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
     //check whether file already exists
-    int check;
-    if((check = access(request->filename, F_OK)) != -1){
-        flag->exists = true;
-    }else{
-        flag->exists = false;
-    }
-    syscallError(check, request);
+    // int check;
+    // if((check = access(request->filename, F_OK)) != -1){
+    //     flag->exists = true;
+    // }else{
+    //     flag->exists = false;
+    // }
+    // syscallError(check, request);
+
 
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
@@ -504,8 +506,8 @@ int main (int argc, char *argv[]){
         fflush(stdout);
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //static
-        // printf("comm_fd in main: %d\n", comm_fd);
-        // fflush(stdout);
+        printf("comm_fd in main: %d\n", comm_fd);
+        fflush(stdout);
         
         //lock queue and push comm_fd into queue
         pthread_mutex_lock(&sink.queueLock);
