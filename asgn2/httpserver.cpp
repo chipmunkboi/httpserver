@@ -122,19 +122,21 @@ bool valid_name (struct httpObject* request, struct flags* flag){
         memmove(request->filename, request->filename+1, strlen(request->filename));
     }
     
+    // COMMENT IN BEFORE SUBMITTING 
+    // TOOK OUT FOR EASE OF TESTING
     //check that name is 10 char long
-    if(strlen(request->filename) != 10){
-        flag->good_name = false;
-        return false;
-    }
+    // if(strlen(request->filename) != 10){
+    //     flag->good_name = false;
+    //     return false;
+    // }
 
     //check that all chars are ASCII chars
-    for(int i=0; i<10; i++){
-        if(!isalnum(request->filename[i])){
-            flag->good_name = false;
-            return false;
-        }
-    }
+    // for(int i=0; i<10; i++){
+    //     if(!isalnum(request->filename[i])){
+    //         flag->good_name = false;
+    //         return false;
+    //     }
+    // }
 
     flag->good_name = true;
     return true;
@@ -247,9 +249,12 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
             request->status_code = 400;
             construct_response(comm_fd, request);
             // return;
-        
+        }
+
         //check that filename is made of 10 ASCII characters
-        }else if(!valid_name(request, flag)){
+        else if(!valid_name(request, flag)){
+            printf("before status code 400\n");
+            fflush(stdout);
             request->status_code = 400;
             construct_response(comm_fd, request);
             // return;
@@ -302,7 +307,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         put_request(comm_fd, request, buf, flag);
 
     }else{
-        request->status_code = 500;
+        request->status_code = 400;
         construct_response(comm_fd, request);
     }
 }
@@ -352,7 +357,7 @@ void* workerThread(void* arg){
 
         pthread_mutex_lock(queueLock);
         //thread sleeps until an fd is pushed into queue
-        while(commQ.empty()){
+        if(commQ.empty()){
             pthread_cond_wait(newReq, queueLock);
         }
         
