@@ -11,7 +11,7 @@ README.md</p>
 
 **To run:**
 1. "make"
-2. "httpserver [hostname/IP address] [port number]"
+2. "httpserver [hostname/IP address] [port number] [-N #] [-r]"
     - port number argument is optional
 
 **Known limitations/issues:**
