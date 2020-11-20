@@ -151,10 +151,12 @@ bool valid_name (struct httpObject* request, struct flags* flag){
     return true;
 }
 
-void copyFiles(char* filename, int source){
+void copyFiles(char* filename, int source, bool isMain = false){
     char buffer[SIZE];
     
     //Create the path
+    printf("ISMAIN is %d\n", isMain);
+    fflush(stdout);
     char copy1[50] = "./copy1/";
     char copy2[50] = "./copy2/";
     char copy3[50] = "./copy3/";
@@ -172,25 +174,32 @@ void copyFiles(char* filename, int source){
     //
     
     //Create 3 copies of the files
-    int des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+    int des1;
+    if(isMain){
+        des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+        if (des1==-1) perror("opening copy1 folder");
+    }
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if(des1==-1 | des2==-1 | des3==-1){
-        perror("opening copy folders");
+    if(des2==-1 | des3==-1){
+        perror("opening copy 2/3 folders");
     }
 
     //Copies content from the current file to all 3 files
     while(read(source, buffer, 1) != 0){
-        int write1 = write(des1, buffer, 1);
+        if(isMain){
+            int write1 = write(des1, buffer, 1);
+            if(write1==-1) perror("writing to copy1 folders");
+        }
         int write2 = write(des2, buffer, 1);
         int write3 = write(des3, buffer, 1);
-        if(write1==-1 | write2==-1 | write3==-1){
-            perror("writing to copy folders");
+        if(write2==-1 | write3==-1){
+            perror("writing to copy 2/3 folders");
         }
     }
 
     //close files
-    close(des1);
+    if(isMain) close(des1);
     close(des2);
     close(des3);
 }
@@ -214,6 +223,7 @@ bool compareFiles(int file1, int file2){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
+    //TODO: have if/else for rflag b/c file might not even exist in httpserver dir
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -229,6 +239,7 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
     }else{
         request->status_code = 200;
         struct stat size;
+        // TODO: Fix bc need to change because we are not supposed to read the main file in directory if rflag
         fstat(file, &size);
         request->content_length = size.st_size;
         int sendfile;
@@ -280,7 +291,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     memset(buf, 0, SIZE);
-
+    //TODO: FIX with same problem as get()
+    
     // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
     //check whether file already exists
     // int check;
@@ -291,7 +303,13 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     // }
     // syscallError(check, request);
 
-    int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
+
+    // If rflag change file name to path inside copy1
+    char copy1[50] = "./copy1/";
+    if(rflag) strcat(copy1, request->filename);
+    else strcat(copy1, request->filename);
+
+    int file = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
 
     int bytes_recv;
@@ -314,6 +332,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         else request->status_code = 201;
 
     //server copies data until read() reads EOF
+    //TODO: Fix because this no work
     }else{
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
@@ -324,10 +343,10 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         else request->status_code = 201;
     }       
     close(file);
-    file = open(request->filename, O_RDONLY);
-    //if redundancy
+    file = open(copy1, O_RDONLY);
+    //If rflag synchronize the other 2 files
     if(rflag){
-        copyFiles(request->filename, file);
+        copyFiles(copy1, file);
     }
 
     construct_response(comm_fd, request);
@@ -517,41 +536,41 @@ int main (int argc, char *argv[]){
         }
     }
 
-    //if -r is present, make three different copies of all files in the server
-    // if(rflag == true){
-    //     DIR *d;
-    //     struct dirent *dir;
-    //     d = opendir(".");
+    // if -r is present, make three different copies of all files in the server
+    if(rflag == true){
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(".");
 
-    //     //Loop through all files in the server directory
-    //     if(d){
-    //         while((dir = readdir(d)) != NULL){ 
+        //Loop through all files in the server directory
+        if(d){
+            while((dir = readdir(d)) != NULL){ 
                 
-    //             // printf("%s\n", dir->d_name);
-    //             // fflush(stdout);
-    //             //check if filename is valid
-    //             int source = open(dir->d_name, O_RDONLY); //open source to copy from
-    //             if(source == -1){
-    //                 perror("can't open source file");
-    //             }
+                // printf("%s\n", dir->d_name);
+                // fflush(stdout);
+                //check if filename is valid
+                int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                if(source == -1){
+                    perror("can't open source file");
+                }
 
-    //             //check if file is a directory
-    //             struct stat path_stat;
-    //             stat(dir->d_name, &path_stat);
-    //             int isfile = S_ISREG(path_stat.st_mode);
-    //             printf("isfile = %d\n", isfile);
+                //check if file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                // printf("isfile = %d\n", isfile);
 
-    //             //file is a directory, go to next file
-    //             if(isfile==0){
-    //                 continue;
-    //             }
+                //file is a directory, go to next file
+                if(isfile==0){
+                    continue;
+                }
 
-    //             copyFiles(dir->d_name, source);
-    //             close(source);
-    //         }  
-    //         closedir(d); 
-    //     }
-    // }
+                copyFiles(dir->d_name, source, true);
+                close(source);
+            }  
+            closedir(d); 
+        }
+    }
 
     //if -N was not present, default is 4
     if(numworkers == 0) numworkers = 4;
