@@ -147,7 +147,11 @@ bool valid_name (struct httpObject* request, struct flags* flag){
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 void copyFiles(char* filename, int source, bool isMain = false){
+=======
+void copyFiles(char* filename, int source){
+>>>>>>> parent of 4118169... Added isMain to copyFiles()
 =======
 void copyFiles(char* filename, int source){
 >>>>>>> parent of 4118169... Added isMain to copyFiles()
