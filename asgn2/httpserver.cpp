@@ -214,6 +214,9 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 void get_request (int comm_fd, struct httpObject* request, char* buf){
     // printf("in GET\n");
     // fflush(stdout);
+void get_request (int comm_fd, struct httpObject* request, char* buf){
+    // printf("in GET\n");
+    // fflush(stdout);
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
