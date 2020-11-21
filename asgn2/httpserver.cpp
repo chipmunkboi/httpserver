@@ -144,17 +144,8 @@ bool valid_name (struct httpObject* request, struct flags* flag){
     return true;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-void copyFiles(char* filename, int source, bool isMain = false){
-=======
+
 void copyFiles(char* filename, int source){
->>>>>>> parent of 4118169... Added isMain to copyFiles()
-=======
-void copyFiles(char* filename, int source){
->>>>>>> parent of 4118169... Added isMain to copyFiles()
     char buffer[SIZE];
     
     //Create the path
@@ -217,16 +208,9 @@ bool compareFiles(int file1, int file2){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
-=======
-void get_request (int comm_fd, struct httpObject* request, char* buf){
+
     // printf("in GET\n");
     // fflush(stdout);
->>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
-=======
-void get_request (int comm_fd, struct httpObject* request, char* buf){
-    // printf("in GET\n");
-    // fflush(stdout);
->>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -565,9 +549,6 @@ int main (int argc, char *argv[]){
         //Loop through all files in the server directory
         if(d){
             while((dir = readdir(d)) != NULL){ 
-                
-<<<<<<< HEAD
-<<<<<<< HEAD
     //             // printf("%s\n", dir->d_name);
     //             // fflush(stdout);
     //             //check if filename is valid
@@ -593,9 +574,7 @@ int main (int argc, char *argv[]){
     //         closedir(d); 
     //     }
     // }
-=======
-=======
->>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
+
                 // printf("%s\n", dir->d_name);
                 // fflush(stdout);
                 //check if filename is valid
@@ -621,11 +600,6 @@ int main (int argc, char *argv[]){
             closedir(d); 
         }
     }
-<<<<<<< HEAD
->>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
-=======
->>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
-
     //if -N was not present, default is 4
     if(numworkers == 0) numworkers = 4;
     printf("numworkers = %d\n", numworkers);
