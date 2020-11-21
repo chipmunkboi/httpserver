@@ -37,7 +37,7 @@ queue <int> commQ;
 struct httpObject {
     char type[4];           //PUT, GET
     char httpversion[9];    //HTTP/1.1
-    char filename[12];      //10 character ASCII name
+    char filename[50];      //10 character ASCII name
     int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length; //length of file
 };
@@ -70,7 +70,7 @@ void clearStruct(struct httpObject* request){
     memset(request->httpversion, 0, SIZE);
     memset(request->filename, 0, SIZE);
     request->status_code = 0;
-    request->content_length = NULL;
+    request->content_length = -1;
 }
 
 void clearFlags(struct flags* flag){
@@ -237,31 +237,33 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
         construct_response(comm_fd, request);
     }else{
         request->status_code = 200;
+
+        //get content length
         struct stat size;
         fstat(file, &size);
         request->content_length = size.st_size;
+
         int sendfile;
-        
         if(rflag){
             //Create the path
-            char copy1[50] = "./copy1/";
+            // char copy1[50] = "./copy1/";
             char copy2[50] = "./copy2/";
             char copy3[50] = "./copy3/";
 
             //Append file name to path
-            strcat(copy1, request->filename);
+            // strcat(copy1, request->filename);
             strcat(copy2, request->filename);
             strcat(copy3, request->filename);
 
-            int file1 = open(copy1, O_RDONLY);
+            // int file1 = open(copy1, O_RDONLY);
             int file2 = open(copy2, O_RDONLY);
             int file3 = open(copy3, O_RDONLY);
             
-            if(file1!=-1 && file2!=-1 && compareFiles(file1, file2)){
-                sendfile = file1; 
+            if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
+                sendfile = file; 
 
-            }else if(file1 != -1 && file3 != -1 && compareFiles(file1, file3)){
-                sendfile = file1;     
+            }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
+                sendfile = file;     
 
             }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
                 sendfile = file2; 
@@ -270,7 +272,7 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
                 //If files fail the checks
                 request->status_code = 500;
             }
-            close(file1);
+            // close(file1);
             close(file2);
             close(file3);
         }
@@ -323,6 +325,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         else request->status_code = 201;
 
     //server copies data until read() reads EOF
+    //TODO: Fix
     }else{
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
@@ -331,11 +334,16 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
-    }       
-    close(file);
-    file = open(request->filename, O_RDONLY);
+    }    
+
+    //moved to if statement below
+    // close(file);
+    // file = open(request->filename, O_RDONLY);
+
     //if redundancy
     if(rflag){
+        close(file);
+        file = open(request->filename, O_RDONLY);
         copyFiles(request->filename, file);
     }
 
@@ -343,21 +351,18 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     close(file); 
 }
 
-void set_first_parse (struct flags* flag, bool value){
-    flag->first_parse = value;
-}
-
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     // printf("%s\n", buf);
     // fflush(stdout);
+    char tempname[15];
+
     if(flag->first_parse){
-        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
+        sscanf(buf, "%s %s %s", request->type, tempname, request->httpversion);
 
         //check that httpversion is "HTTP/1.1"
         if(strcmp(request->httpversion, "HTTP/1.1") != 0){
             request->status_code = 400;
             construct_response(comm_fd, request);
-            // return;
         }
 
         //check that filename is made of 10 ASCII characters
@@ -366,10 +371,15 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
             fflush(stdout);
             request->status_code = 400;
             construct_response(comm_fd, request);
-            // return;
         }
 
-        set_first_parse(flag, false);
+        if(rflag){
+            char copy1[20] = "./copy1/";
+            strcat(copy1, tempname); 
+            strcpy(request->filename, copy1);
+        }
+        
+        flag->first_parse = false;
     }
 
     char* token = strtok(buf, "\r\n");
@@ -394,18 +404,18 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     // fflush(stdout);
     syscallError(bytes_recv, request);
 
-    parse_request(comm_fd, request, buf, flag);
+    parse_request(comm_fd, request, buf, flag, rflag);
 
     // printStruct(request);
 
-    if(!valid_name(request, flag)) return;
-    if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
+    // if something bad happened in parse_request(), return to workerThread()
+    if(request->status_code == 400) return;
 
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(bytes_recv, request);
 
-        parse_request(comm_fd, request, buf, flag); //parse for content length
+        parse_request(comm_fd, request, buf, flag, rflag); //parse for content length
         memset(buf, 0, SIZE);
     }
 
@@ -427,14 +437,14 @@ int getPort (int argc, char *argv[]){
 
     if((optind++) == (argc-1)){             //port number not specified
         port = 80;
-        printf("(1) port = %d\n", port);
+        // printf("(1) port = %d\n", port);
     }else{                                  //port number specified
-        printf("argv[%d] = %s\n", optind, argv[optind]);
+        // printf("argv[%d] = %s\n", optind, argv[optind]);
         port = atoi(argv[optind]);
 
-        if (port < 1024){
+        if (port < 1024){                   //invalid port number
             exit(EXIT_FAILURE);
-            printf("(2) port = %d\n", port);
+            // printf("(2) port = %d\n", port);
         }
     }
 
@@ -470,7 +480,7 @@ void* workerThread(void* arg){
         commQ.pop();
         pthread_mutex_unlock(queueLock);
 
-        set_first_parse(&flag, true);
+        flag.first_parse = true;
         executeFunctions(comm_fd, &request, buf, &flag, rflag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
