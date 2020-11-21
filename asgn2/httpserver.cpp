@@ -146,12 +146,14 @@ bool valid_name (struct httpObject* request, struct flags* flag){
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 void copyFiles(char* filename, int source, bool isMain = false){
+=======
+void copyFiles(char* filename, int source){
+>>>>>>> parent of 4118169... Added isMain to copyFiles()
     char buffer[SIZE];
     
     //Create the path
-    printf("ISMAIN is %d\n", isMain);
-    fflush(stdout);
     char copy1[50] = "./copy1/";
     char copy2[50] = "./copy2/";
     char copy3[50] = "./copy3/";
@@ -169,32 +171,25 @@ void copyFiles(char* filename, int source, bool isMain = false){
     //
     
     //Create 3 copies of the files
-    int des1;
-    if(isMain){
-        des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
-        if (des1==-1) perror("opening copy1 folder");
-    }
+    int des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if(des2==-1 | des3==-1){
-        perror("opening copy 2/3 folders");
+    if(des1==-1 | des2==-1 | des3==-1){
+        perror("opening copy folders");
     }
 
     //Copies content from the current file to all 3 files
     while(read(source, buffer, 1) != 0){
-        if(isMain){
-            int write1 = write(des1, buffer, 1);
-            if(write1==-1) perror("writing to copy1 folders");
-        }
+        int write1 = write(des1, buffer, 1);
         int write2 = write(des2, buffer, 1);
         int write3 = write(des3, buffer, 1);
-        if(write2==-1 | write3==-1){
-            perror("writing to copy 2/3 folders");
+        if(write1==-1 | write2==-1 | write3==-1){
+            perror("writing to copy folders");
         }
     }
 
     //close files
-    if(isMain) close(des1);
+    close(des1);
     close(des2);
     close(des3);
 }
@@ -588,7 +583,7 @@ int main (int argc, char *argv[]){
     //                 continue;
     //             }
 
-    //             copyFiles(dir->d_name, source, true);
+    //             copyFiles(dir->d_name, source);
     //             close(source);
     //         }  
     //         closedir(d); 
