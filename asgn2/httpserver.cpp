@@ -37,7 +37,7 @@ queue <int> commQ;
 struct httpObject {
     char type[4];           //PUT, GET
     char httpversion[9];    //HTTP/1.1
-    char filename[12];      //10 character ASCII name
+    char filename[50];      //10 character ASCII name
     int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length; //length of file
 };
@@ -70,7 +70,8 @@ void clearStruct(struct httpObject* request){
     memset(request->httpversion, 0, SIZE);
     memset(request->filename, 0, SIZE);
     request->status_code = 0;
-    request->content_length = NULL;
+    //why -1 not 0 !!CHECK 
+    request->content_length = 0;
 }
 
 void clearFlags(struct flags* flag){
@@ -126,22 +127,24 @@ void syscallError(int fd, struct httpObject* request){
 }
 
 //returns TRUE if name is valid and FALSE if name is invalid
-bool valid_name (struct httpObject* request, struct flags* flag){
-    if(request->filename[0] == '/'){
-        memmove(request->filename, request->filename+1, strlen(request->filename));
+bool valid_name (struct flags* flag, char* tempname){
+    if(tempname[0] == '/'){
+        memmove(tempname, tempname+1, strlen(tempname));
     }
-    
+
+    printf("tempname in valid_name: %s\n ", tempname);
+    fflush(stdout);
     // COMMENT IN BEFORE SUBMITTING 
     // TOOK OUT FOR EASE OF TESTING
     //check that name is 10 char long
-    // if(strlen(request->filename) != 10){
+    // if(strlen(tempname) != 10){
     //     flag->good_name = false;
     //     return false;
     // }
 
     //check that all chars are ASCII chars
     // for(int i=0; i<10; i++){
-    //     if(!isalnum(request->filename[i])){
+    //     if(!isalnum(tempname[i])){
     //         flag->good_name = false;
     //         return false;
     //     }
@@ -151,18 +154,37 @@ bool valid_name (struct httpObject* request, struct flags* flag){
     return true;
 }
 
-void copyFiles(char* filename, int source){
+char* pathName(struct httpObject* request, bool rflag){
+    if(rflag){
+        char copy1[9] = "./copy1/";
+        return strcat(copy1, request->filename); 
+    }
+    return request->filename;
+}
+
+void copyFiles(char* filename, int source, bool isMain = false){
     char buffer[SIZE];
+
+    printf("filename = %s\n", filename);
+    fflush(stdout);
     
     //Create the path
+    printf("ISMAIN is %d\n", isMain);
+    fflush(stdout);
+
+    //append ./copy#/filename to navigate from main
     char copy1[50] = "./copy1/";
     char copy2[50] = "./copy2/";
     char copy3[50] = "./copy3/";
-
-    //Append file name to path
     strcat(copy1, filename);
     strcat(copy2, filename);
     strcat(copy3, filename);
+    
+    //Delete "." from front
+    // if(isMain){
+    //     memmove(copy2, copy2+1, strlen(copy2));
+    //     memmove(copy3, copy3+1, strlen(copy3));
+    // }
 
     //
     // printf("%s\n", copy1);
@@ -172,35 +194,46 @@ void copyFiles(char* filename, int source){
     //
     
     //Create 3 copies of the files
-    int des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+    int des1;
+    if(isMain){
+        des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+        if (des1==-1) perror("opening copy1 folder");
+    }
+    printf("copy2 = %s\n", copy2);
+    fflush(stdout);
+
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if(des1==-1 | des2==-1 | des3==-1){
-        perror("opening copy folders");
+    if(des2==-1 | des3==-1){
+        perror("opening copy 2/3 folders");
     }
 
-    //Copies content from the current file to all 3 files
+    //Copies content from the current file to all files
     while(read(source, buffer, 1) != 0){
-        int write1 = write(des1, buffer, 1);
+        if(isMain){
+            int write1 = write(des1, buffer, 1);
+            if(write1==-1) perror("writing to copy1 folders");
+        }
         int write2 = write(des2, buffer, 1);
         int write3 = write(des3, buffer, 1);
-        if(write1==-1 | write2==-1 | write3==-1){
-            perror("writing to copy folders");
+        if(write2==-1 | write3==-1){
+            perror("writing to copy 2/3 folders");
         }
     }
 
     //close files
-    close(des1);
+    if(isMain) close(des1);
     close(des2);
     close(des3);
 }
 
+//test to see if work with path/filename
 bool compareFiles(int file1, int file2){
     char buf1[SIZE];
     char buf2[SIZE];
 
     //compare a and b
-    while(read(file1, buf1, SIZE)>0){ //while file1 != EOF
+    while(read(file1, buf1, SIZE) > 0){ //while file1 != EOF
         if(read(file2, buf2, SIZE) < 1){
             return false;
         }
@@ -215,8 +248,10 @@ bool compareFiles(int file1, int file2){
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
     memset(buf, 0, SIZE);
-    int file = open(request->filename, O_RDONLY);
 
+    //check
+    int file = open(pathName(request, rflag), O_RDONLY);
+    int sendfile;
     if (file == -1){
         if(errno==ENOENT){ 
             request->status_code = 404;
@@ -228,42 +263,55 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
         construct_response(comm_fd, request);
     }else{
         request->status_code = 200;
+
+        //get content length
         struct stat size;
         fstat(file, &size);
         request->content_length = size.st_size;
-        int sendfile;
-        
+
         if(rflag){
             //Create the path
-            char copy1[50] = "./copy1/";
             char copy2[50] = "./copy2/";
             char copy3[50] = "./copy3/";
 
-            //Append file name to path
-            strcat(copy1, request->filename);
             strcat(copy2, request->filename);
             strcat(copy3, request->filename);
 
-            int file1 = open(copy1, O_RDONLY);
+            // file
+            // int file1 = open(copy1, O_RDONLY);
             int file2 = open(copy2, O_RDONLY);
             int file3 = open(copy3, O_RDONLY);
             
-            if(file1!=-1 && file2!=-1 && compareFiles(file1, file2)){
-                sendfile = file1; 
+            if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
+                // printf("(1)\n");
+                close(file);
+                close(file2);
+                close(file3);
+                sendfile = open(pathName(request, rflag), O_RDONLY); 
 
-            }else if(file1 != -1 && file3 != -1 && compareFiles(file1, file3)){
-                sendfile = file1;     
+            }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
+                // printf("(2)\n");
+                close(file);
+                close(file2);
+                close(file3);
+                sendfile = open(pathName(request, rflag), O_RDONLY); 
 
             }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
-                sendfile = file2; 
+                // printf("(3)\n");
+                close(file);
+                close(file2);
+                close(file3);
+                sendfile = sendfile = open(copy2, O_RDONLY);
 
             }else {
                 //If files fail the checks
+                printf("in get_req else, return 500\n");
+                fflush(stdout);
                 request->status_code = 500;
             }
-            close(file1);
-            close(file2);
-            close(file3);
+            // close(file);
+            // close(file2);
+            // close(file3);
         }
         else{
             sendfile = file;
@@ -271,16 +319,18 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
         construct_response(comm_fd, request);
 
-        while(read(sendfile, buf, 1) != 0){
+        int check;
+        while((check = read(sendfile, buf, 1)) != 0){
+            // printf("check = %d\nBUF CONTAINS: %s\n", check, buf);
+            // fflush(stdout);
             send(comm_fd, buf, 1, 0); 
         } 
     }
-    close(file);
+    close(sendfile);
 }
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     memset(buf, 0, SIZE);
-
     // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
     //check whether file already exists
     // int check;
@@ -290,17 +340,21 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     //     flag->exists = false;
     // }
     // syscallError(check, request);
+    printf("pathName() is %s\n", pathName(request, rflag));
+    fflush(stdout);
 
-    int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
+    int file = open(pathName(request, rflag), O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
-
+    
     int bytes_recv;
     if(request->content_length != 0){          
         while(request->content_length > 0){
             if(request->content_length < SIZE){
                 bytes_recv = recv(comm_fd, buf, request->content_length, 0);
-            }else{
+                fflush(stdout);
+            }else{   
                 bytes_recv = recv(comm_fd, buf, SIZE, 0);
+                fflush(stdout);
             }
             syscallError(bytes_recv, request);
 
@@ -314,6 +368,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         else request->status_code = 201;
 
     //server copies data until read() reads EOF
+    //TODO: FIX
     }else{
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
@@ -322,11 +377,16 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
-    }       
-    close(file);
-    file = open(request->filename, O_RDONLY);
+    }    
+
+    //moved to if statement below
+    // close(file);
+    // file = open(request->filename, O_RDONLY);
+
     //if redundancy
     if(rflag){
+        close(file);
+        file = open(pathName(request, rflag), O_RDONLY);
         copyFiles(request->filename, file);
     }
 
@@ -334,13 +394,11 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     close(file); 
 }
 
-void set_first_parse (struct flags* flag, bool value){
-    flag->first_parse = value;
-}
-
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     // printf("%s\n", buf);
     // fflush(stdout);
+    // char tempname[15];
+
     if(flag->first_parse){
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
@@ -348,25 +406,31 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
         if(strcmp(request->httpversion, "HTTP/1.1") != 0){
             request->status_code = 400;
             construct_response(comm_fd, request);
-            // return;
         }
 
         //check that filename is made of 10 ASCII characters
-        else if(!valid_name(request, flag)){
+        else if(!valid_name(flag, request->filename)){
             printf("before status code 400\n");
             fflush(stdout);
             request->status_code = 400;
             construct_response(comm_fd, request);
-            // return;
         }
 
-        set_first_parse(flag, false);
+        // DONT CHANGE TO ./copy1/filename and leave as it is
+        // if(rflag){
+        //     char copy1[20] = "./copy1/";
+        //     strcat(copy1, tempname); 
+        //     strcpy(request->filename, copy1);
+        // }
+        
+        flag->first_parse = false;
     }
-
+    //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
     char* token = strtok(buf, "\r\n");
     while(token){
         if(strncmp(token, "Content-Length:", 15) == 0){
             sscanf(token, "%*s %ld", &request->content_length);
+            break; //new (check)
         }else if(strncmp(token, "\r\n", 2)==0){
             break;
         }
@@ -385,18 +449,18 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     // fflush(stdout);
     syscallError(bytes_recv, request);
 
-    parse_request(comm_fd, request, buf, flag);
+    parse_request(comm_fd, request, buf, flag, rflag);
 
-    // printStruct(request);
+    printStruct(request);
 
-    if(!valid_name(request, flag)) return;
-    if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
+    // if something bad happened in parse_request(), return to workerThread()
+    if(request->status_code == 400) return;
 
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(bytes_recv, request);
 
-        parse_request(comm_fd, request, buf, flag); //parse for content length
+        parse_request(comm_fd, request, buf, flag, rflag); //parse for content length
         memset(buf, 0, SIZE);
     }
 
@@ -418,14 +482,14 @@ int getPort (int argc, char *argv[]){
 
     if((optind++) == (argc-1)){             //port number not specified
         port = 80;
-        printf("(1) port = %d\n", port);
+        // printf("(1) port = %d\n", port);
     }else{                                  //port number specified
-        printf("argv[%d] = %s\n", optind, argv[optind]);
+        // printf("argv[%d] = %s\n", optind, argv[optind]);
         port = atoi(argv[optind]);
 
-        if (port < 1024){
+        if (port < 1024){                   //invalid port number
             exit(EXIT_FAILURE);
-            printf("(2) port = %d\n", port);
+            // printf("(2) port = %d\n", port);
         }
     }
 
@@ -461,7 +525,7 @@ void* workerThread(void* arg){
         commQ.pop();
         pthread_mutex_unlock(queueLock);
 
-        set_first_parse(&flag, true);
+        flag.first_parse = true;
         executeFunctions(comm_fd, &request, buf, &flag, rflag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
@@ -546,7 +610,7 @@ int main (int argc, char *argv[]){
     //                 continue;
     //             }
 
-    //             copyFiles(dir->d_name, source);
+    //             copyFiles(dir->d_name, source, true);
     //             close(source);
     //         }  
     //         closedir(d); 
