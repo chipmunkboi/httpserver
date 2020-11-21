@@ -211,6 +211,9 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
     // printf("in GET\n");
     // fflush(stdout);
+void get_request (int comm_fd, struct httpObject* request, char* buf){
+    // printf("in GET\n");
+    // fflush(stdout);
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -574,6 +577,32 @@ int main (int argc, char *argv[]){
     //         closedir(d); 
     //     }
     // }
+                
+                // printf("%s\n", dir->d_name);
+                // fflush(stdout);
+                //check if filename is valid
+                int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                if(source == -1){
+                    perror("can't open source file");
+                }
+
+                //check if file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                printf("isfile = %d\n", isfile);
+
+                //file is a directory, go to next file
+                if(isfile==0){
+                    continue;
+                }
+
+                copyFiles(dir->d_name, source);
+                close(source);
+            }  
+            closedir(d); 
+        }
+    }
 
                 // printf("%s\n", dir->d_name);
                 // fflush(stdout);
