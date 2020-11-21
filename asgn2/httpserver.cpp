@@ -23,16 +23,9 @@
 
 #include <queue>
 
-#include <unordered_map> // C++ libary for hashmap 
-
 #define SIZE 16384       //16 KB
-
 using namespace std;
 queue <int> commQ;
-
-
-// create hashmap for file locks
-// unordered_map<string, struct lock>;
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -48,12 +41,12 @@ struct flags {
     bool good_name;         //flag for whether name is valid
 };
 
-struct requestLock{
+struct synchronization{
     // Declaration of thread condition variable 
-    pthread_cond_t *newReq; 
+    pthread_cond_t newReq = PTHREAD_COND_INITIALIZER; 
     // declaring mutex 
-    pthread_mutex_t *queueLock; 
-    bool rflag;
+    pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER; 
+    // char* string = "hello";
 };
 
 //used to check that all parts of struct are correct
@@ -151,6 +144,7 @@ bool valid_name (struct httpObject* request, struct flags* flag){
     return true;
 }
 
+<<<<<<< HEAD
 void copyFiles(char* filename, int source, bool isMain = false){
     char buffer[SIZE];
     
@@ -223,6 +217,11 @@ bool compareFiles(int file1, int file2){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
+=======
+void get_request (int comm_fd, struct httpObject* request, char* buf){
+    // printf("in GET\n");
+    // fflush(stdout);
+>>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
     memset(buf, 0, SIZE);
     int file = open(request->filename, O_RDONLY);
 
@@ -240,54 +239,18 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
         struct stat size;
         fstat(file, &size);
         request->content_length = size.st_size;
-        int sendfile;
-        
-        if(rflag){
-            //Create the path
-            char copy1[50] = "./copy1/";
-            char copy2[50] = "./copy2/";
-            char copy3[50] = "./copy3/";
-
-            //Append file name to path
-            strcat(copy1, request->filename);
-            strcat(copy2, request->filename);
-            strcat(copy3, request->filename);
-
-            int file1 = open(copy1, O_RDONLY);
-            int file2 = open(copy2, O_RDONLY);
-            int file3 = open(copy3, O_RDONLY);
-            
-            if(file1!=-1 && file2!=-1 && compareFiles(file1, file2)){
-                sendfile = file1; 
-
-            }else if(file1 != -1 && file3 != -1 && compareFiles(file1, file3)){
-                sendfile = file1;     
-
-            }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
-                sendfile = file2; 
-
-            }else {
-                //If files fail the checks
-                request->status_code = 500;
-            }
-            close(file1);
-            close(file2);
-            close(file3);
-        }
-        else{
-            sendfile = file;
-        }
 
         construct_response(comm_fd, request);
 
-        while(read(sendfile, buf, 1) != 0){
+        while(read(file, buf, 1) != 0){
             send(comm_fd, buf, 1, 0); 
         } 
     }
+    
     close(file);
 }
 
-void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     memset(buf, 0, SIZE);
 
     // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
@@ -299,6 +262,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     //     flag->exists = false;
     // }
     // syscallError(check, request);
+
 
     int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
@@ -324,6 +288,18 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
     //server copies data until read() reads EOF
     }else{
+        //REASON FOR KEEPING IS IN README
+        /*bytes_recv = read(comm_fd, buf, SIZE);
+        syscallError(bytes_recv, request);
+        int wfile = write(file, buf, bytes_recv);
+        syscallError(wfile, request);
+
+        while(bytes_recv == SIZE){
+            bytes_recv = read(comm_fd, buf, SIZE);
+            int wfile2 = write(file, buf, bytes_recv);
+            syscallError(wfile2, request);
+        }*/
+
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
             syscallError(wfile2, request);
@@ -332,12 +308,6 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
     }       
-    close(file);
-    file = open(request->filename, O_RDONLY);
-    //if redundancy
-    if(rflag){
-        copyFiles(request->filename, file);
-    }
 
     construct_response(comm_fd, request);
     close(file); 
@@ -383,7 +353,7 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
     }
 }
 
-void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     // printf("in execFunc()\n");
     // fflush(stdout);
 
@@ -396,7 +366,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     parse_request(comm_fd, request, buf, flag);
 
-    // printStruct(request);
+    printStruct(request);
 
     if(!valid_name(request, flag)) return;
     if(strcmp(request->httpversion, "HTTP/1.1") != 0) return;
@@ -410,10 +380,10 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }
 
     if(strcmp(request->type, "GET") == 0){
-        get_request(comm_fd, request, buf, rflag);
+        get_request(comm_fd, request, buf);
 
     }else if(strcmp(request->type, "PUT") == 0){
-        put_request(comm_fd, request, buf, flag, rflag);
+        put_request(comm_fd, request, buf, flag);
 
     }else{
         request->status_code = 500; 
@@ -442,12 +412,16 @@ int getPort (int argc, char *argv[]){
 }
 
 void* workerThread(void* arg){
-    //created pointer to the locks/conditional variables
-    pthread_cond_t *newReq = ((struct requestLock*)arg)->newReq;
-    pthread_mutex_t *queueLock = ((struct requestLock*)arg)->queueLock;
+    // printf("*comm_fd = %d\n", comm_fd);
+    // fflush(stdout);
 
-    bool rflag = (((struct requestLock*)arg)->rflag);
+    // printf("string = %s\n", ((struct synchronization*)arg)->string);
 
+    //might need to be a pointer
+    struct synchronization* spoint = (struct synchronization*)arg;
+    pthread_cond_t *newReq = &spoint->newReq;
+    pthread_mutex_t *queueLock = &spoint->queueLock;
+    
     //handled by worker thread
     //worker handles mutex to determine to wait or run
     //create one array for each struct
@@ -457,8 +431,8 @@ void* workerThread(void* arg){
     int comm_fd;
     while(true){
 
-        // printf("Start of workerthread while loop\n");
-        // fflush(stdout);
+        printf("Start of workerthread while loop\n");
+        fflush(stdout);
 
         pthread_mutex_lock(queueLock);
         //thread sleeps until an fd is pushed into queue
@@ -471,17 +445,68 @@ void* workerThread(void* arg){
         pthread_mutex_unlock(queueLock);
 
         set_first_parse(&flag, true);
-        executeFunctions(comm_fd, &request, buf, &flag, rflag);
+        executeFunctions(comm_fd, &request, buf, &flag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
         // pthread_mutex_unlock(&lock);
 
-        // printf("End of Workerthread %d\n", comm_fd);
-        // fflush(stdout);
+        printf("End of Workerthread %d\n", comm_fd);
+        fflush(stdout);
 
         close(comm_fd);
     }
 }
+
+void copyFiles(char* filename, int source){
+    char buffer[SIZE];
+    
+    //Create the path
+    char copy1[50] = "./copy1/";
+    char copy2[50] = "./copy2/";
+    char copy3[50] = "./copy3/";
+
+    //Append file name to path
+    strcat(copy1, filename);
+    strcat(copy2, filename);
+    strcat(copy3, filename);
+
+    //
+    printf("%s\n", copy1);
+    printf("%s\n", copy2);
+    printf("%s\n", copy3);
+    fflush(stdout);
+    //
+    
+    //Create 3 copies of the files
+    int des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
+    int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
+    int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
+    if(des1==-1 | des2==-1 | des3==-1){
+        perror("opening copy folders");
+    }
+
+    //Copies content from the current file to all 3 files
+    while(read(source, buffer, 1) != 0){
+        int write1 = write(des1, buffer, 1);
+        int write2 = write(des2, buffer, 1);
+        int write3 = write(des3, buffer, 1);
+        if(write1==-1 | write2==-1 | write3==-1){
+            perror("writing to copy folders");
+        }
+    }
+
+    //close files
+    close(des1);
+    close(des2);
+    close(des3);
+}
+
+// void* sleepThread(void *sink){
+//     struct synchronization *temp = sink;
+//     pthread_cond_wait(&temp->cond, &temp->lock);
+//     workerThread(comm_fd);
+//     close(comm_fd);
+// }
 
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
@@ -527,15 +552,16 @@ int main (int argc, char *argv[]){
     }
 
     //if -r is present, make three different copies of all files in the server
-    // if(rflag == true){
-    //     DIR *d;
-    //     struct dirent *dir;
-    //     d = opendir(".");
+    if(rflag == true){
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(".");
 
-    //     //Loop through all files in the server directory
-    //     if(d){
-    //         while((dir = readdir(d)) != NULL){ 
+        //Loop through all files in the server directory
+        if(d){
+            while((dir = readdir(d)) != NULL){ 
                 
+<<<<<<< HEAD
     //             // printf("%s\n", dir->d_name);
     //             // fflush(stdout);
     //             //check if filename is valid
@@ -561,9 +587,37 @@ int main (int argc, char *argv[]){
     //         closedir(d); 
     //     }
     // }
+=======
+                // printf("%s\n", dir->d_name);
+                // fflush(stdout);
+                //check if filename is valid
+                int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                if(source == -1){
+                    perror("can't open source file");
+                }
+
+                //check if file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                printf("isfile = %d\n", isfile);
+
+                //file is a directory, go to next file
+                if(isfile==0){
+                    continue;
+                }
+
+                copyFiles(dir->d_name, source);
+                close(source);
+            }  
+            closedir(d); 
+        }
+    }
+>>>>>>> parent of 34e7f04... GOT REDUDANCY ALL WORKING
 
     //if -N was not present, default is 4
     if(numworkers == 0) numworkers = 4;
+    printf("numworkers = %d\n", numworkers);
 
 //----------------for debugging------------------------------
     // printf("\noptind = %d\nargc = %d\n\n", optind, argc);
@@ -578,11 +632,11 @@ int main (int argc, char *argv[]){
 
     //get host address (e.g. localhost)
     char* hostaddr = argv[optind];
-    // printf("hostaddr = %s\n", hostaddr);
+    printf("hostaddr = %s\n", hostaddr);
 
     //get port number
     int port = getPort(argc, argv);
-    // printf("port = %d\n", port);
+    printf("port = %d\n", port);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -621,21 +675,10 @@ int main (int argc, char *argv[]){
     struct sockaddr client_addr;
     socklen_t client_addrlen;
 
-    //create queue lock and new request signal
-    pthread_cond_t request = PTHREAD_COND_INITIALIZER;
-    pthread_mutex_t queue = PTHREAD_MUTEX_INITIALIZER;
-
-    struct requestLock sink;
-
-    sink.newReq = &request;
-    sink.queueLock = &queue;
-    sink.rflag = rflag;
-    
-    // printf("sink.rflag in MAIN = %d\n", sink.rflag);
-    // fflush(stdout);
-
     // Create numworkers threads from pthread_t []
     pthread_t tid[numworkers];
+    struct synchronization sink;
+
     for(int i=0; i<numworkers; i++){
         int tcreateerror = pthread_create(&(tid[i]), NULL, workerThread, (void*)(&sink));
         if(tcreateerror != 0){
@@ -651,21 +694,21 @@ int main (int argc, char *argv[]){
         fflush(stdout);
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //static
-        // printf("comm_fd in main: %d\n", comm_fd);
-        // fflush(stdout);
+        printf("comm_fd in main: %d\n", comm_fd);
+        fflush(stdout);
         
         //lock queue and push comm_fd into queue
-        pthread_mutex_lock(&queue);
+        pthread_mutex_lock(&sink.queueLock);
         commQ.push(comm_fd);
         //  printf("inside lock queue top is: %d\n", commQ.front());
-        pthread_mutex_unlock(&queue);
+        pthread_mutex_unlock(&sink.queueLock);
 
         //alert one thread in pool to handle connection here
-        // printf("\nAbout to signal %d\n", comm_fd);
-        // fflush(stdout);
-        pthread_cond_signal(&request);
-        // printf("\nAfter signal %d\n", comm_fd);
-        // fflush(stdout);
+        printf("\nAbout to signal %d\n", comm_fd);
+        fflush(stdout);
+        pthread_cond_signal(&sink.newReq);
+        printf("\nAfter signal %d\n", comm_fd);
+        fflush(stdout);
     }
 
     return EXIT_SUCCESS;
