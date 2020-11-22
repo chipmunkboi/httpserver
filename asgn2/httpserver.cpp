@@ -132,8 +132,6 @@ bool valid_name (struct flags* flag, char* tempname){
         memmove(tempname, tempname+1, strlen(tempname));
     }
 
-    printf("tempname in valid_name: %s\n ", tempname);
-    fflush(stdout);
     // COMMENT IN BEFORE SUBMITTING 
     // TOOK OUT FOR EASE OF TESTING
     //check that name is 10 char long
@@ -154,15 +152,26 @@ bool valid_name (struct flags* flag, char* tempname){
     return true;
 }
 
-char* pathName(struct httpObject* request, bool rflag){
+char* pathName(struct httpObject* request, bool rflag, int copyNum){
     if(rflag){
-        char copy1[9] = "./copy1/";
-        return strcat(copy1, request->filename); 
+        if(copyNum == 1){
+            char copy[9] = "./copy1/";
+            return strcat(copy, request->filename); 
+        }
+        else if(copyNum == 2){
+            char copy[9] = "./copy2/";
+            return strcat(copy, request->filename); 
+        }
+        else if(copyNum == 3){
+            char copy[9] = "./copy3/";
+            return strcat(copy, request->filename); 
+        }
     }
-    return request->filename;
+    else return request->filename;
+    
 }
 
-void copyFiles(char* filename, int source, bool isMain = false){
+void copyFiles(char* filename, int source, bool isMain, struct httpObject* request, bool rflag){
     char buffer[SIZE];
 
     printf("filename = %s\n", filename);
@@ -173,19 +182,10 @@ void copyFiles(char* filename, int source, bool isMain = false){
     fflush(stdout);
 
     //append ./copy#/filename to navigate from main
-    char copy1[50] = "./copy1/";
-    char copy2[50] = "./copy2/";
-    char copy3[50] = "./copy3/";
-    strcat(copy1, filename);
-    strcat(copy2, filename);
-    strcat(copy3, filename);
+    char* copy1 = pathName(request, rflag, 1);
+    char* copy2 = pathName(request, rflag, 2);
+    char* copy3 = pathName(request, rflag, 3);
     
-    //Delete "." from front
-    // if(isMain){
-    //     memmove(copy2, copy2+1, strlen(copy2));
-    //     memmove(copy3, copy3+1, strlen(copy3));
-    // }
-
     //
     // printf("%s\n", copy1);
     // printf("%s\n", copy2);
@@ -250,7 +250,7 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
     memset(buf, 0, SIZE);
 
     //check
-    int file = open(pathName(request, rflag), O_RDONLY);
+    int file = open(pathName(request, rflag, 1), O_RDONLY);
     int sendfile;
     if (file == -1){
         if(errno==ENOENT){ 
@@ -271,37 +271,37 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
         if(rflag){
             //Create the path
-            char copy2[50] = "./copy2/";
-            char copy3[50] = "./copy3/";
+            // char copy2[50] = "./copy2/";
+            // char copy3[50] = "./copy3/";
 
-            strcat(copy2, request->filename);
-            strcat(copy3, request->filename);
+            // strcat(copy2, request->filename);
+            // strcat(copy3, request->filename);
 
             // file
             // int file1 = open(copy1, O_RDONLY);
-            int file2 = open(copy2, O_RDONLY);
-            int file3 = open(copy3, O_RDONLY);
+            int file2 = open(pathName(request, rflag, 2), O_RDONLY);
+            int file3 = open(pathName(request, rflag, 3), O_RDONLY);
             
             if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
                 // printf("(1)\n");
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = open(pathName(request, rflag), O_RDONLY); 
+                sendfile = open(pathName(request, rflag, 1), O_RDONLY); 
 
             }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
                 // printf("(2)\n");
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = open(pathName(request, rflag), O_RDONLY); 
+                sendfile = open(pathName(request, rflag, 1), O_RDONLY); 
 
             }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
                 // printf("(3)\n");
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = sendfile = open(copy2, O_RDONLY);
+                sendfile = open(pathName(request, rflag, 2), O_RDONLY);
 
             }else {
                 //If files fail the checks
@@ -312,8 +312,7 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
             // close(file);
             // close(file2);
             // close(file3);
-        }
-        else{
+        }else{
             sendfile = file;
         }
 
@@ -340,10 +339,10 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     //     flag->exists = false;
     // }
     // syscallError(check, request);
-    printf("pathName() is %s\n", pathName(request, rflag));
+    printf("pathName() is %s\n", pathName(request, rflag, 1));
     fflush(stdout);
 
-    int file = open(pathName(request, rflag), O_CREAT | O_RDWR | O_TRUNC);
+    int file = open(pathName(request, rflag, 1), O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
     
     int bytes_recv;
@@ -386,8 +385,8 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     //if redundancy
     if(rflag){
         close(file);
-        file = open(pathName(request, rflag), O_RDONLY);
-        copyFiles(request->filename, file);
+        file = open(pathName(request, rflag, 1), O_RDONLY);
+        copyFiles(request->filename, file, false, request, rflag);
     }
 
     construct_response(comm_fd, request);
