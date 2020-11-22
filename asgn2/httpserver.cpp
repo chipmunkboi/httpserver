@@ -32,7 +32,7 @@ queue <int> commQ;
 
 
 // create hashmap for file locks
-// unordered_map<string, struct lock>;
+unordered_map<string, pthread_mutex_t> fileLock;
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -464,6 +464,13 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         memset(buf, 0, SIZE);
     }
 
+    if(fileLock.find(pathName(request, rflag)) == fileLock.end()){
+        //create new mutex for file
+        pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
+        fileLock.insert(make_pair(pathName(request, rflag), fileMutex));
+    }
+    // If here a fileMutex lock exists
+    pthread_mutex_lock(&fileLock.at(pathName(request, rflag)));
     if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, buf, rflag);
 
@@ -474,6 +481,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         request->status_code = 500; 
         construct_response(comm_fd, request);
     }
+    pthread_mutex_unlock(&fileLock.at(pathName(request, rflag)));
 }
 
 //port is set to user-specified number or 80 by default
