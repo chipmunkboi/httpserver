@@ -28,8 +28,11 @@
 #define SIZE 16384       //16 KB
 
 using namespace std;
+// create queue for requests 
 queue <int> commQ;
 
+//create global lock for new files
+pthread_mutex_t newFileLock = PTHREAD_MUTEX_INITIALIZER;
 
 // create hashmap for file locks
 unordered_map<string, pthread_mutex_t> fileLock;
@@ -56,7 +59,7 @@ struct requestLock{
     bool rflag;
 };
 
-//used to check that all parts of struct are correct
+//used to check that all parts of struct are correct 
 void printStruct(struct httpObject* request){
     printf("type: %s\n", request->type);
     printf("ver: %s\n", request->httpversion);
@@ -132,17 +135,17 @@ bool valid_name (struct flags* flag, char* tempname){
         memmove(tempname, tempname+1, strlen(tempname));
     }
 
-    printf("tempname in valid_name: %s\n ", tempname);
-    fflush(stdout);
+    // printf("tempname in valid_name: %s\n ", tempname);
+    // fflush(stdout);
     // COMMENT IN BEFORE SUBMITTING 
     // TOOK OUT FOR EASE OF TESTING
-    //check that name is 10 char long
+    // check that name is 10 char long
     // if(strlen(tempname) != 10){
     //     flag->good_name = false;
     //     return false;
     // }
 
-    //check that all chars are ASCII chars
+    // check that all chars are ASCII chars
     // for(int i=0; i<10; i++){
     //     if(!isalnum(tempname[i])){
     //         flag->good_name = false;
@@ -156,7 +159,7 @@ bool valid_name (struct flags* flag, char* tempname){
 
 char* pathName(struct httpObject* request, bool rflag){
     if(rflag){
-        char copy1[9] = "./copy1/";
+        char copy1[20] = "./copy1/";
         return strcat(copy1, request->filename); 
     }
     return request->filename;
@@ -173,9 +176,9 @@ void copyFiles(char* filename, int source, bool isMain = false){
     fflush(stdout);
 
     //append ./copy#/filename to navigate from main
-    char copy1[50] = "./copy1/";
-    char copy2[50] = "./copy2/";
-    char copy3[50] = "./copy3/";
+    char copy1[20] = "./copy1/";
+    char copy2[20] = "./copy2/";
+    char copy3[20] = "./copy3/";
     strcat(copy1, filename);
     strcat(copy2, filename);
     strcat(copy3, filename);
@@ -204,7 +207,7 @@ void copyFiles(char* filename, int source, bool isMain = false){
 
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if(des2==-1 | des3==-1){
+    if((des2==-1) | (des3==-1)){
         perror("opening copy 2/3 folders");
     }
 
@@ -216,7 +219,7 @@ void copyFiles(char* filename, int source, bool isMain = false){
         }
         int write2 = write(des2, buffer, 1);
         int write3 = write(des3, buffer, 1);
-        if(write2==-1 | write3==-1){
+        if((write2==-1) | (write3==-1)){
             perror("writing to copy 2/3 folders");
         }
     }
@@ -247,6 +250,9 @@ bool compareFiles(int file1, int file2){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
+    printf("in GET\n");
+    fflush(stdout);
+
     memset(buf, 0, SIZE);
 
     //check
@@ -301,7 +307,7 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = sendfile = open(copy2, O_RDONLY);
+                sendfile = open(copy2, O_RDONLY);
 
             }else {
                 //If files fail the checks
@@ -330,6 +336,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 }
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+    printf("in PUT\n");
+    fflush(stdout);
     memset(buf, 0, SIZE);
     // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
     //check whether file already exists
@@ -340,8 +348,8 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     //     flag->exists = false;
     // }
     // syscallError(check, request);
-    printf("pathName() is %s\n", pathName(request, rflag));
-    fflush(stdout);
+    // printf("pathName() is %s\n", pathName(request, rflag));
+    // fflush(stdout);
 
     int file = open(pathName(request, rflag), O_CREAT | O_RDWR | O_TRUNC);
     syscallError(file, request);
@@ -394,7 +402,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     close(file); 
 }
 
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     // printf("%s\n", buf);
     // fflush(stdout);
     // char tempname[15];
@@ -416,13 +424,6 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
             construct_response(comm_fd, request);
         }
 
-        // DONT CHANGE TO ./copy1/filename and leave as it is
-        // if(rflag){
-        //     char copy1[20] = "./copy1/";
-        //     strcat(copy1, tempname); 
-        //     strcpy(request->filename, copy1);
-        // }
-        
         flag->first_parse = false;
     }
     //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
@@ -449,7 +450,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     // fflush(stdout);
     syscallError(bytes_recv, request);
 
-    parse_request(comm_fd, request, buf, flag, rflag);
+    parse_request(comm_fd, request, buf, flag);
 
     printStruct(request);
 
@@ -460,17 +461,22 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(bytes_recv, request);
 
-        parse_request(comm_fd, request, buf, flag, rflag); //parse for content length
+        parse_request(comm_fd, request, buf, flag); //parse for content length
         memset(buf, 0, SIZE);
     }
 
+    pthread_mutex_lock(&newFileLock);
     if(fileLock.find(pathName(request, rflag)) == fileLock.end()){
         //create new mutex for file
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-        fileLock.insert(make_pair(pathName(request, rflag), fileMutex));
+        fileLock[pathName(request, rflag)] = fileMutex;
     }
+    pthread_mutex_unlock(&newFileLock);
+
     // If here a fileMutex lock exists
     pthread_mutex_lock(&fileLock.at(pathName(request, rflag)));
+    printf("FILE LOCKED\n");
+    fflush(stdout);
     if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, buf, rflag);
 
@@ -482,6 +488,8 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         construct_response(comm_fd, request);
     }
     pthread_mutex_unlock(&fileLock.at(pathName(request, rflag)));
+    printf("FILE UNLOCKED\n");
+    fflush(stdout);
 }
 
 //port is set to user-specified number or 80 by default
@@ -523,11 +531,11 @@ void* workerThread(void* arg){
         // printf("Start of workerthread while loop\n");
         // fflush(stdout);
 
-        pthread_mutex_lock(queueLock);
         //thread sleeps until an fd is pushed into queue
-        while(commQ.empty()){
+        if(commQ.empty()){
             pthread_cond_wait(newReq, queueLock);
         }
+        else pthread_mutex_lock(queueLock);
         
         comm_fd = commQ.front(); //front of queue has oldest fd
         commQ.pop();
@@ -698,7 +706,8 @@ int main (int argc, char *argv[]){
     // fflush(stdout);
 
     // Create numworkers threads from pthread_t []
-    pthread_t tid[numworkers];
+    // pthread_t tid[numworkers]; //this gives a warning (variable length array)
+    pthread_t *tid = new pthread_t[numworkers]; //NEW: check this - might need to delete[] tid somewhere
     for(int i=0; i<numworkers; i++){
         int tcreateerror = pthread_create(&(tid[i]), NULL, workerThread, (void*)(&sink));
         if(tcreateerror != 0){
