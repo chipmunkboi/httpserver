@@ -356,7 +356,11 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 }
 
 void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    printf("in parse req\n");
+    fflush(stdout);
     if(flag->first_parse){
+        printf("in first parse\n");
+        fflush(stdout);
         sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
         //check that httpversion is "HTTP/1.1"
@@ -367,50 +371,75 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
 
         //check that filename is made of 10 ASCII characters
         else if(!valid_name(flag, request->filename)){
-            printf("before status code 400\n");
-            fflush(stdout);
             request->status_code = 400;
             construct_response(comm_fd, request);
         }
 
         flag->first_parse = false;
     }
-    //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
-    char* token = strtok(buf, "\r\n");
-    while(token){
-        if(strncmp(token, "Content-Length:", 15) == 0){
-            sscanf(token, "%*s %ld", &request->content_length);
-            break; //new (check)
-        }else if(strncmp(token, "\r\n", 2)==0){
-            break;
+
+    // char* token = strtok(buf, "\r\n");
+    // while(token){
+        printf("before strcmp\n");
+        if(strncmp(buf, "Content-Length:", 15) == 0){
+            sscanf(buf, "%*s %ld", &request->content_length);
         }
-        token = strtok(NULL, "\r\n");
-    }
+    //         break; //new (check)
+    //     }else if(strncmp(token, "\r\n", 2)==0){
+            
+    //         break;
+    //     }
+    //     token = strtok(NULL, "\r\n");
+    // }
+    printf("end of parse req\n");
+    fflush(stdout);
 }
 
 void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     memset(buf, 0, SIZE);
 
-    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once 
-    syscallError(comm_fd, bytes_recv, request);
+    int bytes_recv;
+    char buffer[1];
+    bool endLine = false;
+    char contentBuf[SIZE];
+    memset(contentBuf, 0, SIZE);
 
-    parse_request(comm_fd, request, buf, flag);
+    while((bytes_recv = recv(comm_fd, buffer, 1, 0)) != 0){
+        syscallError(comm_fd, bytes_recv, request);
+        // printf("contentBufBEFORE: %s\n", contentBuf);
+        strcat(contentBuf, buffer);
+        // printf("contentBuf: %s\n", contentBuf);
+        if(endLine && buffer[0] == '\r'){
+            printf("inside BREAK IF\n");
+            recv(comm_fd, buffer, 1, 0);
+            memset(contentBuf, 0, SIZE);
+            memset(buffer, 0, 1);
+            printf("GOING OUT BREAK IF\n");
+            break;
+        }
+        //Reached end of line before SIZE chars
+        if(buffer[0] == '\n'){  //at a newLine reset buffer
+            endLine = true;
+            // printf("inside first if\n");
+            parse_request(comm_fd, request, contentBuf, flag);
+            memset(contentBuf, 0, SIZE);
+        }
+        else endLine = false;
 
-    // printStruct(request);
+        // If line is longer than SIZE chars
+        if(contentBuf[SIZE-1] != 0){ //check to see if contentBuf is filled
+            printf("\ninside second if SHOULD NOT REACH HERE\n");
+            parse_request(comm_fd, request, contentBuf, flag);
+            memset(contentBuf, 0, SIZE);
+        }
+
+    }
+
+    printStruct(request);
 
     // if something bad happened in parse_request(), return to workerThread()
     if(request->status_code == 400) return;
 
-    //TODO: parse in /r/n delimited chunks so that we never miss "Content-Length:""
-    while(bytes_recv == SIZE){                      //if buf is completely filled
-        bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
-        syscallError(comm_fd, bytes_recv, request);
-
-        parse_request(comm_fd, request, buf, flag); //parse for content length
-        memset(buf, 0, SIZE);
-    }
-
-    // pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
         pthread_mutex_lock(&newFileLock); //global lock
@@ -418,7 +447,6 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         fileLock[path] = fileMutex; //create new mutex for file
         pthread_mutex_unlock(&newFileLock); //global unlock
     }
-    // pthread_mutex_unlock(&newFileLock); //global unlock
 
     // If here, a fileLock mutex exists
 
