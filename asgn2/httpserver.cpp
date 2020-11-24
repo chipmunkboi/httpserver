@@ -11,21 +11,17 @@
 #include <ctype.h>      //isalnum
 #include <errno.h>      
 #include <err.h>
-
 #include <netinet/in.h> //inet_aton
 #include <arpa/inet.h>  //inet_aton
-
 #include <stdio.h>      //printf, perror
-#include <ctype.h>      //for isDigit()
-#include <pthread.h>    //for threads
-
+#include <ctype.h>      //isdigit
+#include <pthread.h>    //threads
 #include <dirent.h>     //for parsing directory
 
-#include <queue>
+#include <queue>         //queue
+#include <unordered_map> // C++ library for hashmap 
 
-#include <unordered_map> // C++ libary for hashmap 
-
-#define SIZE 16384       //16 KB
+#define SIZE 16384       //16 KB buffer restriction
 
 using namespace std;
 // create queue for requests 
@@ -52,10 +48,8 @@ struct flags {
 };
 
 struct requestLock{
-    // Declaration of thread condition variable 
-    pthread_cond_t *newReq; 
-    // declaring mutex 
-    pthread_mutex_t *queueLock; 
+    pthread_cond_t *newReq;     //cond var for threads getting new request
+    pthread_mutex_t *queueLock; //mutex for queue
     bool rflag;
 };
 
@@ -116,8 +110,6 @@ void construct_response (int comm_fd, struct httpObject* request){
     strcat (response, "Content-Length: ");
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
-
-    printf("response:\n----------\n%s\n", response);
     
     send(comm_fd, response, strlen(response), 0);
 }
@@ -132,12 +124,11 @@ void syscallError(int comm_fd, int file, struct httpObject* request){
 
 //returns TRUE if name is valid and FALSE if name is invalid
 bool valid_name (struct flags* flag, char* tempname){
+    //remove "/" from front of file name
     if(tempname[0] == '/'){
         memmove(tempname, tempname+1, strlen(tempname));
     }
 
-    // COMMENT IN BEFORE SUBMITTING 
-    // TOOK OUT FOR EASE OF TESTING
     // check that name is 10 char long
     if(strlen(tempname) != 10){
         flag->good_name = false;
@@ -163,20 +154,14 @@ char* pathName(struct httpObject* request, bool rflag, char* path){
         char* copy1final = path;
         return copy1final; 
     }
+    strcpy(path, request->filename);
     return request->filename;
 }
 
 void copyFiles(char* filename, int source, bool isMain = false){
     char buffer[SIZE];
 
-    printf("filename = %s\n", filename);
-    fflush(stdout);
-    
-    //Create the path
-    printf("ISMAIN is %d\n", isMain);
-    fflush(stdout);
-
-    //append ./copy#/filename to navigate from main
+    //create path "./copy#/filename" to navigate from httpserver directory
     char copy1[20] = "./copy1/";
     char copy2[20] = "./copy2/";
     char copy3[20] = "./copy3/";
@@ -190,8 +175,6 @@ void copyFiles(char* filename, int source, bool isMain = false){
         des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
         if (des1==-1) perror("opening copy1 folder");
     }
-    printf("copy2 = %s\n", copy2);
-    fflush(stdout);
 
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
@@ -238,9 +221,6 @@ bool compareFiles(int file1, int file2){
 }
 
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
-    printf("in GET\n");
-    fflush(stdout);
-
     memset(buf, 0, SIZE);
 
     //check
@@ -272,26 +252,22 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
             strcat(copy2, request->filename);
             strcat(copy3, request->filename);
 
-            // int file1 = open(copy1, O_RDONLY);
             int file2 = open(copy2, O_RDONLY);
             int file3 = open(copy3, O_RDONLY);
             
             if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
-                // printf("(1)\n");
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = open(pathName(request, rflag, path), O_RDONLY); 
+                sendfile = open(path, O_RDONLY); 
 
             }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
-                // printf("(2)\n");
                 close(file);
                 close(file2);
                 close(file3);
-                sendfile = open(pathName(request, rflag, path), O_RDONLY); 
+                sendfile = open(path, O_RDONLY); 
 
             }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
-                // printf("(3)\n");
                 close(file);
                 close(file2);
                 close(file3);
@@ -303,11 +279,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
                 fflush(stdout);
                 request->status_code = 500;
             }
-            // close(file);
-            // close(file2);
-            // close(file3);
-        }
-        else{
+
+        }else{
             sendfile = file;
         }
 
@@ -315,8 +288,6 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
         int check;
         while((check = read(sendfile, buf, 1)) != 0){
-            // printf("check = %d\nBUF CONTAINS: %s\n", check, buf);
-            // fflush(stdout);
             send(comm_fd, buf, 1, 0); 
         } 
     }
@@ -324,21 +295,18 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 }
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
-    printf("in PUT\n");
-    fflush(stdout);
     memset(buf, 0, SIZE);
-    // FAILS WITH MULTITHREADING ONLY FIX IF NEED TO DIFFERENTIATE BETWEEN 200 AND 201
-    //check whether file already exists
+    
+    char path[50]; 
     int check;
-    if((check = access(request->filename, F_OK)) != -1){
+    if((check = access(pathName(request, rflag, path), F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
     
-    char path[50]; 
-    int file = open(pathName(request, rflag, path), O_CREAT | O_RDWR | O_TRUNC);
-    if(file == -1) perror("open:");
+    int file = open(path, O_CREAT | O_RDWR | O_TRUNC);
+    if(file == -1) perror("open");
 
     syscallError(comm_fd, file, request);
 
@@ -375,19 +343,15 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         else request->status_code = 201;
     }    
 
-    //moved to if statement below
-    // close(file);
-    // file = open(request->filename, O_RDONLY);
-
     //if redundancy
     if(rflag){
         close(file);
-        file = open(pathName(request, rflag, path), O_RDONLY);
+        file = open(path, O_RDONLY);
         copyFiles(request->filename, file);
     }
 
-    fflush(stdout);
     construct_response(comm_fd, request);
+    memset(path, 0, 50);
     close(file); 
 }
 
@@ -437,6 +401,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     // if something bad happened in parse_request(), return to workerThread()
     if(request->status_code == 400) return;
 
+    //TODO: parse in /r/n delimited chunks so that we never miss "Content-Length:""
     while(bytes_recv == SIZE){                      //if buf is completely filled
         bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
         syscallError(comm_fd, bytes_recv, request);
@@ -445,21 +410,18 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         memset(buf, 0, SIZE);
     }
 
-    pthread_mutex_lock(&newFileLock);
-    // printf("LOCK GLOBAL LOCK\n--------------------\n");
+    pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
         //create new mutex for file
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-        fileLock[pathName(request, rflag, path)] = fileMutex;
+        fileLock[path] = fileMutex;
     }
-    pthread_mutex_unlock(&newFileLock);
-    // printf("UNLOCK GLOBAL LOCK\n--------------------\n");
+    pthread_mutex_unlock(&newFileLock); //global unlock
 
-    // If here a fileMutex lock exists
-    pthread_mutex_lock(&fileLock.at(pathName(request, rflag, path)));
-    printf("FILE LOCKED\n");
-    fflush(stdout);
+    // If here, a fileLock mutex exists
+
+    pthread_mutex_lock(&fileLock.at(path));
     if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, buf, rflag);
 
@@ -470,25 +432,20 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         request->status_code = 500; 
         construct_response(comm_fd, request);
     }
-    pthread_mutex_unlock(&fileLock.at(pathName(request, rflag, path)));
-    printf("FILE UNLOCKED\n");
-    fflush(stdout);
+    pthread_mutex_unlock(&fileLock.at(path));
 }
 
 //port is set to user-specified number or 80 by default
 int getPort (int argc, char *argv[]){
     int port;
 
-    if((optind++) == (argc-1)){             //port number not specified
+    if((optind++) == (argc-1)){     //port number not specified
         port = 80;
-        // printf("(1) port = %d\n", port);
-    }else{                                  //port number specified
-        // printf("argv[%d] = %s\n", optind, argv[optind]);
+    }else{                          //port number specified
         port = atoi(argv[optind]);
 
-        if (port < 1024){                   //invalid port number
+        if (port < 1024){           //invalid port number
             exit(EXIT_FAILURE);
-            // printf("(2) port = %d\n", port);
         }
     }
 
@@ -502,18 +459,11 @@ void* workerThread(void* arg){
 
     bool rflag = (((struct requestLock*)arg)->rflag);
 
-    //handled by worker thread
-    //worker handles mutex to determine to wait or run
-    //create one array for each struct
     struct httpObject request;
     struct flags flag;
     char buf[SIZE];
     int comm_fd;
     while(true){
-
-        // printf("Start of workerthread while loop\n");
-        // fflush(stdout);
-
         //thread sleeps until an fd is pushed into queue
         if(commQ.empty()){
             pthread_cond_wait(newReq, queueLock);
@@ -528,10 +478,6 @@ void* workerThread(void* arg){
         executeFunctions(comm_fd, &request, buf, &flag, rflag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
-        // pthread_mutex_unlock(&lock);
-
-        // printf("End of Workerthread %d\n", comm_fd);
-        // fflush(stdout);
 
         close(comm_fd);
     }
@@ -540,16 +486,6 @@ void* workerThread(void* arg){
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
     int option, numworkers = 0;
-
-//----------------for debugging------------------------------
-    // printf("-------------------------\n");
-    // printf("ALL ARGS:\n");
-    // for(int i=0; i<argc; i++){
-    //     printf("argv[%d]: %s\n", i, argv[i]);
-    //     fflush(stdout);
-    // }
-    // printf("-------------------------\n\n");
-//-----------------------------------------------------------
 
     //optind:          0            1           2        3  4    5
     //max argc = 6:   ./httpserver  localhost   8080    -N  5   -r
@@ -564,7 +500,6 @@ int main (int argc, char *argv[]){
     //parse command for -N and -r
     while((option = getopt(argc, argv, "N:r")) != -1){
         if(option == 'r'){
-            // printf("has r flag\n");
             rflag = true;
 
         }else if(option == 'N'){     
@@ -580,6 +515,7 @@ int main (int argc, char *argv[]){
         }
     }
 
+    // // UNCOMMENT BEFORE SUBMIT
     //if -r is present, make three different copies of all files in the server
     // if(rflag == true){
     //     DIR *d;
@@ -619,24 +555,11 @@ int main (int argc, char *argv[]){
     //if -N was not present, default is 4
     if(numworkers == 0) numworkers = 4;
 
-//----------------for debugging------------------------------
-    // printf("\noptind = %d\nargc = %d\n\n", optind, argc);
-    // printf("-------------------------\n");
-    // printf("REMAINING ARGS TO PARSE:\n");
-    // for(int i=optind; i<argc; i++){
-    //     printf("argv[%d]: %s\n", i, argv[i]);
-    //     fflush(stdout);
-    // }
-    // printf("-------------------------\n\n");
-//-----------------------------------------------------------
-
     //get host address (e.g. localhost)
     char* hostaddr = argv[optind];
-    // printf("hostaddr = %s\n", hostaddr);
 
     //get port number
     int port = getPort(argc, argv);
-    // printf("port = %d\n", port);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -649,7 +572,7 @@ int main (int argc, char *argv[]){
     //create server socket file descriptor
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0){
-        // perror("server_socket");
+        perror("server_socket");
         exit(EXIT_FAILURE);
     }
 
@@ -677,19 +600,15 @@ int main (int argc, char *argv[]){
 
     //create queue lock and new request signal
     pthread_cond_t request = PTHREAD_COND_INITIALIZER;
-    pthread_mutex_t queue = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
 
     struct requestLock sink;
 
     sink.newReq = &request;
-    sink.queueLock = &queue;
+    sink.queueLock = &queueLock;
     sink.rflag = rflag;
-    
-    // printf("sink.rflag in MAIN = %d\n", sink.rflag);
-    // fflush(stdout);
 
     // Create numworkers threads from pthread_t []
-    // pthread_t tid[numworkers]; //this gives a warning (variable length array)
     pthread_t *tid = new pthread_t[numworkers]; //NEW: check this - might need to delete[] tid somewhere
     for(int i=0; i<numworkers; i++){
         int tcreateerror = pthread_create(&(tid[i]), NULL, workerThread, (void*)(&sink));
@@ -706,21 +625,14 @@ int main (int argc, char *argv[]){
         fflush(stdout);
         //accept incoming connection
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //static
-        // printf("comm_fd in main: %d\n", comm_fd);
-        // fflush(stdout);
         
         //lock queue and push comm_fd into queue
-        pthread_mutex_lock(&queue);
+        pthread_mutex_lock(&queueLock);
         commQ.push(comm_fd);
-        //  printf("inside lock queue top is: %d\n", commQ.front());
-        pthread_mutex_unlock(&queue);
+        pthread_mutex_unlock(&queueLock);
 
         //alert one thread in pool to handle connection here
-        // printf("\nAbout to signal %d\n", comm_fd);
-        // fflush(stdout);
         pthread_cond_signal(&request);
-        // printf("\nAfter signal %d\n", comm_fd);
-        // fflush(stdout);
     }
 
     return EXIT_SUCCESS;
