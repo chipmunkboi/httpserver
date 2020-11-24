@@ -410,14 +410,15 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         memset(buf, 0, SIZE);
     }
 
-    pthread_mutex_lock(&newFileLock); //global lock
+    // pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
-        //create new mutex for file
+        pthread_mutex_lock(&newFileLock); //global lock
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-        fileLock[path] = fileMutex;
+        fileLock[path] = fileMutex; //create new mutex for file
+        pthread_mutex_unlock(&newFileLock); //global unlock
     }
-    pthread_mutex_unlock(&newFileLock); //global unlock
+    // pthread_mutex_unlock(&newFileLock); //global unlock
 
     // If here, a fileLock mutex exists
 
