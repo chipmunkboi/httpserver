@@ -446,7 +446,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }
 
     pthread_mutex_lock(&newFileLock);
-    printf("LOCK GLOBAL LOCK\n--------------------\n");
+    // printf("LOCK GLOBAL LOCK\n--------------------\n");
     char path[50];
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
         //create new mutex for file
@@ -454,7 +454,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         fileLock[pathName(request, rflag, path)] = fileMutex;
     }
     pthread_mutex_unlock(&newFileLock);
-    printf("UNLOCK GLOBAL LOCK\n--------------------\n");
+    // printf("UNLOCK GLOBAL LOCK\n--------------------\n");
 
     // If here a fileMutex lock exists
     pthread_mutex_lock(&fileLock.at(pathName(request, rflag, path)));
