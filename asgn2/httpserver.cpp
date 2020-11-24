@@ -336,11 +336,9 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     }else{
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
+            // printf("wfile2 = %d\n", wfile2);
             syscallError(comm_fd, wfile2, request);
         }
-
-        if(flag->exists == true) request->status_code = 200;
-        else request->status_code = 201;
     }    
 
     //if redundancy
@@ -410,7 +408,6 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         memset(buf, 0, SIZE);
     }
 
-    // pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
         pthread_mutex_lock(&newFileLock); //global lock
@@ -418,7 +415,6 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         fileLock[path] = fileMutex; //create new mutex for file
         pthread_mutex_unlock(&newFileLock); //global unlock
     }
-    // pthread_mutex_unlock(&newFileLock); //global unlock
 
     // If here, a fileLock mutex exists
 
