@@ -173,13 +173,29 @@ void copyFiles(char* filename, int source, bool isMain = false){
     int des1;
     if(isMain){
         des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
-        if (des1==-1) perror("opening copy1 folder");
+        // if (des1==-1){
+        //     if(errno == ENOENT){
+        //     request->status_code = 404;
+        //     }else if(errno == EACCES){
+        //         request->status_code = 403;
+        //     }else{
+        //         request->status_code = 400;
+        //     }
+        // }
+        perror("opening copy1 folder"); //
     }
 
     int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
     int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if((des2==-1) | (des3==-1)){
-        perror("opening copy 2/3 folders");
+    if((des2==-1) || (des3==-1)){
+        perror("opening copy2/copy3 folder");
+        // if(errno == ENOENT){
+        //     request->status_code = 404;
+        // }else if(errno == EACCES){
+        //     request->status_code = 403;
+        // }else{
+        //     request->status_code = 400;
+        // }
     }
 
     //Copies content from the current file to all files
@@ -306,10 +322,9 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     }
     
     int file = open(path, O_CREAT | O_RDWR | O_TRUNC);
-    if(file == -1) perror("open");
+    if(file == -1) perror("open"); //TODO: add status codes here
 
     syscallError(comm_fd, file, request);
-
     int bytes_recv;
     if(request->content_length != 0){          
         while(request->content_length > 0){
@@ -378,7 +393,6 @@ void parse_request (int comm_fd, struct httpObject* request, char* buf, struct f
     while(token){
         if(strncmp(token, "Content-Length:", 15) == 0){
             sscanf(token, "%*s %ld", &request->content_length);
-            break; //new (check)
         }else if(strncmp(token, "\r\n", 2)==0){
             break;
         }
@@ -409,12 +423,12 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }
 
     char path[50];
+    pthread_mutex_lock(&newFileLock); //global lock --> moved here bc sometimes two threads check that theres "no lock yet"
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
-        pthread_mutex_lock(&newFileLock); //global lock
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
         fileLock[path] = fileMutex; //create new mutex for file
-        pthread_mutex_unlock(&newFileLock); //global unlock
     }
+    pthread_mutex_unlock(&newFileLock); //global unlock
 
     // If here, a fileLock mutex exists
 
