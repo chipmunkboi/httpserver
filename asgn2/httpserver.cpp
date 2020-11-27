@@ -38,6 +38,7 @@ struct httpObject {
     char httpversion[9];    //HTTP/1.1
     char filename[50];      //10 character ASCII name
     char body[SIZE];
+    char* collector;
     int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length; //length of file
 };
@@ -68,6 +69,7 @@ void clearStruct(struct httpObject* request){
     memset(request->httpversion, 0, 9);
     memset(request->filename, 0, 50);
     memset(request->body, 0, SIZE);
+    request->collector = NULL;
     request->status_code = 0;
     //why -1 not 0 !!CHECK 
     request->content_length = 0;
@@ -356,7 +358,9 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 }
 
 void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
-    // printf("[%d] body in PUT:\n%s======================\n\n", comm_fd, request->body);
+
+    // printf("collector = %s=\n", request->collector);
+    // printf("END OF COLLECTOR============================================\n\n");
 
     int check;
     char path[50];
@@ -395,18 +399,22 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
     }else if((request->content_length != 0) && (strlen(request->body) != 0)){
         // memset(buf, 0, SIZE); //check if needed
         // printf("(1) [%d] CL = %ld\n", comm_fd, request->content_length);
-
     
         int wfile = write(file, request->body, strlen(request->body));
         syscallError(comm_fd, wfile, request);
+        request->content_length = request->content_length - wfile;
+
+        if(strlen(request->collector) != 0){
+            wfile = write(file, request->collector, strlen(request->body));
+            syscallError(comm_fd, wfile, request);
+            request->content_length = request->content_length - wfile;
+        }
 
         //
         // printf("(1) [%d] wrote %d bytes to file\n", comm_fd, wfile); 
-        //
-
-        request->content_length = request->content_length - wfile;
         // printf("(2) [%d] CL = %ld\n", comm_fd, request->content_length);
-        fflush(stdout);
+        //fflush(stdout);
+        //   
 
         if(request->content_length != 0){
             // printf("in if\n");
@@ -438,11 +446,40 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
 
     //server copies data until read() reads EOF
     }else{
-        while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
-            int wfile2 = write(file, buf, bytes_recv);
-            // printf("wfile2 = %d\n", wfile2);
-            syscallError(comm_fd, wfile2, request);
+        printf("in else\n");
+        fflush(stdout);
+        //make sure to write body (if present) before recving more to write
+        printf("[%d] strlen(body) = %ld\n", comm_fd, strlen(request->body));
+        if(strlen(request->body) != 0){
+           
+            int wfile =  write(file, request->body, strlen(request->body));
+            printf("[%d] BODY wfile bytes written = %d\n\n", comm_fd, wfile);
+
+            fflush(stdout);
         }
+
+        if(strlen(request->collector) != 0){
+            // printf("collector = %s=\n", request->collector);
+            // printf("strlen(collector): %ld============================================\n\n", strlen(request->collector));
+            int wfile =  write(file, request->collector, strlen(request->collector));
+            printf("[%d] COLLECTOR wfile bytes written = %d\n\n", comm_fd, wfile);
+            fflush(stdout);
+
+        }
+
+        //
+        int counter = 0;
+        while((bytes_recv = recv(comm_fd, buf, SIZE, 0)) > 0){
+            counter++;
+            // printf("(%d) IN THE IMPORTANT WHILE\n", counter);
+            printf("bytes_recv = %d\n", bytes_recv);
+            // fflush(stdout);
+            write(file, buf, bytes_recv);
+            // printf("wfile2 = %d\n", wfile2);
+            // syscallError(comm_fd, wfile2, request);
+        }
+        printf("end of else\n");
+        fflush(stdout);
     }
 
     //if redundancy
@@ -465,10 +502,9 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     syscallError(comm_fd, bytes_recv, request);
 
     //
-    // printf("[%d] strlen(buf) = %ld\n", comm_fd, strlen(buf));
+    // printf("[%d] first recv strlen(buf) = %ld\n", comm_fd, strlen(buf));
     // printf("[%d] buf from first recv:=====\n%s=============================\n\n", comm_fd, buf);
     // printf("[%d] bytes recv = %d\n", comm_fd, bytes_recv);
-    // printf("[%d] strlen of buf in exefunc = %ld\n\n", comm_fd, strlen(buf));
     //
 
     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
@@ -486,7 +522,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }   
 
     //recv from socket until \r\n\r\n is encountered (end of response header)
-    // printf("----------tokenization------------------\n");
+    printf("----------tokenization------------------\n");
     char temp[SIZE];
     strncpy(temp, buf, SIZE); //protects buf
 
@@ -494,6 +530,18 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     char* token = strtok(temp, "\n");
     while(token != NULL){
+
+        //
+        printf("\n(%ld):", strlen(token));
+        if(strcmp(token, "\n") == 0){
+            printf("\\n");
+            
+        }else{
+            printf("%s=\n", token);
+        }
+        fflush(stdout);
+        //
+
         if(strncmp(token, "Content-Length:", 15) == 0){
             sscanf(token, "%*s %ld", &request->content_length);
         }
@@ -501,14 +549,14 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         if(strncmp(token, "\r", 2) == 0){
             token_counter += 2;
 
-            // //
-            // printf("OMFG IT WORKS!!!!!!!!!!!!!!!!!!!!!!!\n"); 
+            //
+            printf("OMFG IT WORKS!!!!!!!!!!!!!!!!!!!!!!!\n"); 
             // printf("[%d] (1) token:\n%s=====\n", comm_fd, token);
             // fflush(stdout);
-            // //
+            //
 
             //set token to point to next thing after double \r\n
-            token = strtok(NULL, "\n");
+            // token = strtok(NULL, "\n");
 
             break;
         }
@@ -517,28 +565,48 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }
     
     // printf("[%d] token counter = %ld\n", comm_fd, token_counter);
+    printf("token right outside tokenize loop:%s=\n", token);
+    fflush(stdout);
+
+    //token is pointing to \r right now, need to move token over \n (1 byte)
+    token = token + 1;
+    printf("token after moving it:%s=\n", token);
+    fflush(stdout);
 
     //right here, *token is pointing at the start of the body
     // printf("[%d] token:%s=====\n", comm_fd, token);
 
     // check: if() might not be necessary
     // if(strlen(buf) > token_counter){
+        printf("strlen(buf) before copybytes = %ld\ntoken counter = %ld\n", strlen(buf), token_counter);
         size_t copyBytes = (strlen(buf)) - token_counter;
+
+        //
+        printf("token before strncpy:%s==\n", token);
+        //
+
         strncpy(request->body, token, copyBytes);
         
-        //
-        // printf("COPYBYTES: strlen(buf) - token counter = %ld\n", copyBytes);
-        // printf("[%d] body strlen:%ld=====\n", comm_fd, strlen(request->body));
-        //
+        
+        printf("copyBytes = %ld\n", copyBytes);
+        printf("[%d] body strlen:%ld\n", comm_fd, strlen(request->body));
+        fflush(stdout);
+        
 
         //CHECK: experimental
         if(copyBytes != strlen(request->body)){
+            if(copyBytes == (strlen(request->body)+1)){
             strcat(request->body, "\n");
             
             //
-            // printf("body after concat:%s=====\nstrlen(body) = %ld\n", request->body, strlen(request->body));
-            // fflush(stdout);
+            printf("body after concat:%s=====\nstrlen(body) = %ld\n", request->body, strlen(request->body));
+            fflush(stdout);
             //
+            }else{
+                // printf("buf[strlen(body)]: %s\n", &buf[strlen(request->body)]);
+                fflush(stdout);
+                request->collector = &buf[strlen(request->body)+token_counter];
+            }
         }
 
         //
@@ -548,7 +616,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     // }
 
-    // printf("----------------------------------------\n\n");
+    printf("----------------------------------------\n\n");
 
     // printf("[%d] PRINT STRUCT TEST--------------------\n", comm_fd);
     // printStruct(request);
