@@ -352,22 +352,24 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
 void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     int check;
+    int wfile;
     char path[50];
     if((check = access(pathName(request, rflag, path), F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
-
-    int file = open(path, O_CREAT | O_RDWR | O_TRUNC);
+    
+    int file;
+    if(request->status_code != 400){
+        file = open(path, O_CREAT | O_RDWR | O_TRUNC);
+    }
     if(file == -1){perror("open");}
     syscallError(comm_fd, file, request);
     
     int bytes_recv;
     //no body bytes in buf, safe to recv
     if((request->content_length != 0) && (strlen(request->body) == 0)){    
-        printf("in if\n");
-        fflush(stdout);
         while(request->content_length > 0){
             if(request->content_length < SIZE){
                 bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
@@ -377,34 +379,41 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
                 fflush(stdout);
             }
 
-            int wfile = write(file, buf, bytes_recv);
-            syscallError(comm_fd, wfile, request);
+            if(request->status_code != 400){
+                wfile = write(file, buf, bytes_recv);
+                syscallError(comm_fd, wfile, request);
+            }
 
             request->content_length = request->content_length - bytes_recv;
         }
         fflush(stdout);
         //if file already exists return 200, if not return 201
-        if(flag->exists == true) request->status_code = 200;
-        else request->status_code = 201;
+        if(request->status_code != 400){
+            if(flag->exists == true) request->status_code = 200;
+            else request->status_code = 201;
+        }
 
     //at least part of body was in buf, need to write() before checking whether we need to recv() again
     }else if((request->content_length != 0) && (strlen(request->body) != 0)){ 
-        fflush(stdout);  
-        int wfile = write(file, request->body, strlen(request->body));
-        syscallError(comm_fd, wfile, request);
+        fflush(stdout); 
+            
+        if(request->status_code != 400){
+            wfile = write(file, request->body, strlen(request->body));
+            syscallError(comm_fd, wfile, request);
+        }
 
-        request->content_length = request->content_length - wfile;
+        request->content_length = request->content_length - strlen(request->body);
 
         if((request->collector != NULL) && (strlen(request->collector) != 0)){
-            wfile = write(file, request->collector, strlen(request->collector));
-            syscallError(comm_fd, wfile, request);
-            request->content_length = request->content_length - wfile;
+            if(request->status_code != 400){
+                wfile = write(file, request->collector, strlen(request->collector));
+                syscallError(comm_fd, wfile, request);
+            }
+            request->content_length = request->content_length - strlen(request->collector);
         }
 
         if(request->content_length != 0){
-
             while(request->content_length > 0){
-
                 if(request->content_length < SIZE){
                     bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
 
@@ -412,39 +421,41 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
                     bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
                 }
 
-                wfile = write(file, buf, bytes_recv);
-                syscallError(comm_fd, wfile, request);
+                if(request->status_code != 400){
+                    wfile = write(file, buf, bytes_recv);
+                    syscallError(comm_fd, wfile, request);
+                }
 
                 request->content_length = request->content_length - bytes_recv;
             }            
         }
 
         //if file already exists return 200, if not return 201
-        if(flag->exists == true) request->status_code = 200;
-        else request->status_code = 201;
+        if(request->status_code != 400){
+            if(flag->exists == true) request->status_code = 200;
+            else request->status_code = 201;
+        }
 
     //no content length specified: server copies data until read() reads EOF
     }else{
         //make sure to write already recv-ed body before recving more to write
         if(strlen(request->body) != 0){
-            write(file, request->body, strlen(request->body));
-            // //
-            // printf("[%d] body wfile bytes written = %d\n\n", comm_fd, wfile);
-            // fflush(stdout);
-            // //
+            if(request->status_code != 400){
+                write(file, request->body, strlen(request->body));
+            }
         }
 
         if((request->collector != NULL) && (strlen(request->collector) != 0)){
-            write(file, request->collector, strlen(request->collector));
-            
-            // //
-            // printf("[%d] COLLECTOR wfile bytes written = %d\n\n", comm_fd, wfile);
-            // fflush(stdout);
-            // //
+            if(request->status_code != 400){
+                write(file, request->collector, strlen(request->collector));
+            }
+
         }
 
         while((bytes_recv = recv(comm_fd, buf, SIZE, 0)) > 0){
-            write(file, buf, bytes_recv);
+            if(request->status_code != 400){
+                write(file, buf, bytes_recv);
+            }
         }
     }
 
@@ -475,14 +486,14 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     //check that httpversion is "HTTP/1.1"
     if(strcmp(request->httpversion, "HTTP/1.1") != 0){
         request->status_code = 400;
-        construct_response(comm_fd, request);
+        // construct_response(comm_fd, request); //temp comment
     }
 
     //check that filename is made of 10 ASCII characters
     else if(!valid_name(flag, request->filename)){
         request->status_code = 400;
-        construct_response(comm_fd, request);
-    }   
+        // construct_response(comm_fd, request); //temp comment
+    }
 
     char temp[SIZE];
     strncpy(temp, buf, SIZE); //protects buf
