@@ -37,6 +37,7 @@ struct httpObject {
     char type[4];           //PUT, GET
     char httpversion[9];    //HTTP/1.1
     char filename[50];      //10 character ASCII name
+    char body[SIZE];
     int status_code;        //200, 201, 400, 403, 404, 500
     ssize_t content_length; //length of file
 };
@@ -55,17 +56,18 @@ struct requestLock{
 
 //used to check that all parts of struct are correct 
 void printStruct(struct httpObject* request){
-    printf("type: %s\n", request->type);
-    printf("ver: %s\n", request->httpversion);
-    printf("file: %s\n", request->filename);
-    printf("content length: %ld\n", request->content_length);
+    printf("type: %s=\n", request->type);
+    printf("ver: %s=\n", request->httpversion);
+    printf("file: %s=\n", request->filename);
+    printf("content length: %ld=\n", request->content_length);
     fflush(stdout);
 }
 
 void clearStruct(struct httpObject* request){
-    memset(request->type, 0, SIZE);
-    memset(request->httpversion, 0, SIZE);
-    memset(request->filename, 0, SIZE);
+    memset(request->type, 0, 4);
+    memset(request->httpversion, 0, 9);
+    memset(request->filename, 0, 50);
+    memset(request->body, 0, SIZE);
     request->status_code = 0;
     //why -1 not 0 !!CHECK 
     request->content_length = 0;
@@ -110,8 +112,15 @@ void construct_response (int comm_fd, struct httpObject* request){
     strcat (response, "Content-Length: ");
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
+
+    //
+    printf("\n[%d] RESPONSE BEFORE SEND######################\n", comm_fd);
+    printf("%s\n", response);
+    printf("###############################################\n\n");
+    //
     
-    send(comm_fd, response, strlen(response), 0);
+    printf("[%d] send = %ld\n", comm_fd, send(comm_fd, response, strlen(response), 0));
+    fflush(stdout);
 }
 
 void syscallError(int comm_fd, int file, struct httpObject* request){
@@ -236,6 +245,42 @@ bool compareFiles(int file1, int file2){
     return true;
 }
 
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    printf("[%d] in parse req\n", comm_fd);
+    if(flag->first_parse){
+        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
+
+        //check that httpversion is "HTTP/1.1"
+        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+        }
+
+        //check that filename is made of 10 ASCII characters
+        else if(!valid_name(flag, request->filename)){
+            printf("before status code 400\n");
+            fflush(stdout);
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+        }
+
+        flag->first_parse = false;
+    }
+    //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
+    char* token = strtok(buf, "\r\n");
+    while(token){
+        if(strncmp(token, "Content-Length:", 15) == 0){
+            printf("[%d] found content length\n", comm_fd);
+            sscanf(token, "%*s %ld", &request->content_length);
+        }else if(strncmp(token, "\r\n", 2)==0){
+            printf("[%d] should break here\n", comm_fd); //doesn't even go into here
+            fflush(stdout);
+            break;
+        }
+        token = strtok(NULL, "\r\n");
+    }
+}
+
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
     memset(buf, 0, SIZE);
 
@@ -310,32 +355,32 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
     close(sendfile);
 }
 
-void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
-    memset(buf, 0, SIZE);
-    
-    char path[50]; 
+void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+    // printf("[%d] body in PUT:\n%s======================\n\n", comm_fd, request->body);
+
     int check;
+    char path[50];
     if((check = access(pathName(request, rflag, path), F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
-    
-    int file = open(path, O_CREAT | O_RDWR | O_TRUNC);
-    if(file == -1) perror("open"); //TODO: add status codes here
 
+    int file = open(path, O_CREAT | O_RDWR | O_TRUNC);
+    if(file == -1){perror("open");}
     syscallError(comm_fd, file, request);
+    
     int bytes_recv;
-    if(request->content_length != 0){          
+    //body not in buf, safe to recv
+    if((request->content_length != 0) && (strlen(request->body) == 0)){                  
         while(request->content_length > 0){
             if(request->content_length < SIZE){
-                bytes_recv = recv(comm_fd, buf, request->content_length, 0);
+                bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
                 fflush(stdout);
             }else{   
-                bytes_recv = recv(comm_fd, buf, SIZE, 0);
+                bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
                 fflush(stdout);
             }
-            syscallError(comm_fd, bytes_recv, request);
 
             int wfile = write(file, buf, bytes_recv);
             syscallError(comm_fd, wfile, request);
@@ -346,15 +391,59 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
         if(flag->exists == true) request->status_code = 200;
         else request->status_code = 201;
 
+    //at least part of body was in buf, need to write() before checking whether we need to recv() again
+    }else if((request->content_length != 0) && (strlen(request->body) != 0)){
+        // memset(buf, 0, SIZE); //check if needed
+        // printf("(1) [%d] CL = %ld\n", comm_fd, request->content_length);
+
+    
+        int wfile = write(file, request->body, strlen(request->body));
+        syscallError(comm_fd, wfile, request);
+
+        //
+        // printf("(1) [%d] wrote %d bytes to file\n", comm_fd, wfile); 
+        //
+
+        request->content_length = request->content_length - wfile;
+        // printf("(2) [%d] CL = %ld\n", comm_fd, request->content_length);
+        fflush(stdout);
+
+        if(request->content_length != 0){
+            // printf("in if\n");
+            while(request->content_length > 0){
+                // printf("in while\n");
+
+                if(request->content_length < SIZE){
+                    // printf("should be in here\n");
+                    bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
+                    // printf("is it hanging????\n");
+                    fflush(stdout);
+                }else{
+                    bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
+                }
+
+                wfile = write(file, buf, bytes_recv);
+                syscallError(comm_fd, wfile, request);
+                // printf("(2) [%d] wrote %d bytes to file\n", comm_fd, wfile); 
+
+                request->content_length = request->content_length - bytes_recv;
+            }            
+        }
+
+        // printf("(3) [%d] CL = %ld\n", comm_fd, request->content_length);
+
+        //if file already exists return 200, if not return 201
+        if(flag->exists == true) request->status_code = 200;
+        else request->status_code = 201;
+
     //server copies data until read() reads EOF
-    //TODO: FIX
     }else{
         while((bytes_recv = read(comm_fd, buf, SIZE)) > 0){
             int wfile2 = write(file, buf, bytes_recv);
             // printf("wfile2 = %d\n", wfile2);
             syscallError(comm_fd, wfile2, request);
         }
-    }    
+    }
 
     //if redundancy
     if(rflag){
@@ -364,103 +453,177 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
     }
 
     construct_response(comm_fd, request);
+
     memset(path, 0, 50);
     close(file); 
 }
 
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
-    if(flag->first_parse){
-        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
-
-        //check that httpversion is "HTTP/1.1"
-        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-        }
-
-        //check that filename is made of 10 ASCII characters
-        else if(!valid_name(flag, request->filename)){
-            printf("before status code 400\n");
-            fflush(stdout);
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-        }
-
-        flag->first_parse = false;
-    }
-    //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
-    char* token = strtok(buf, "\r\n");
-    while(token){
-        if(strncmp(token, "Content-Length:", 15) == 0){
-            sscanf(token, "%*s %ld", &request->content_length);
-        }else if(strncmp(token, "\r\n", 2)==0){
-            break;
-        }
-        token = strtok(NULL, "\r\n");
-    }
-}
-
+//rn we only do one recv
 void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
-    memset(buf, 0, SIZE);
-
-    int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once 
+    //recv from socket until \r\n is encountered (denotes end of first line?)
+    int bytes_recv = recv(comm_fd, buf, SIZE, 0);
     syscallError(comm_fd, bytes_recv, request);
 
-    parse_request(comm_fd, request, buf, flag);
+    //
+    // printf("[%d] strlen(buf) = %ld\n", comm_fd, strlen(buf));
+    // printf("[%d] buf from first recv:=====\n%s=============================\n\n", comm_fd, buf);
+    // printf("[%d] bytes recv = %d\n", comm_fd, bytes_recv);
+    // printf("[%d] strlen of buf in exefunc = %ld\n\n", comm_fd, strlen(buf));
+    //
 
-    // printStruct(request);
+    sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
-    // if something bad happened in parse_request(), return to workerThread()
-    if(request->status_code == 400) return;
-
-    //TODO: parse in /r/n delimited chunks so that we never miss "Content-Length:""
-    while(bytes_recv == SIZE){                      //if buf is completely filled
-        bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
-        syscallError(comm_fd, bytes_recv, request);
-
-        parse_request(comm_fd, request, buf, flag); //parse for content length
-        memset(buf, 0, SIZE);
+    //check that httpversion is "HTTP/1.1"
+    if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+        request->status_code = 400;
+        construct_response(comm_fd, request);
     }
 
+    //check that filename is made of 10 ASCII characters
+    else if(!valid_name(flag, request->filename)){
+        request->status_code = 400;
+        construct_response(comm_fd, request);
+    }   
+
+    //recv from socket until \r\n\r\n is encountered (end of response header)
+    // printf("----------tokenization------------------\n");
+    char temp[SIZE];
+    strncpy(temp, buf, SIZE); //protects buf
+
+    size_t token_counter = 0;
+
+    char* token = strtok(temp, "\n");
+    while(token != NULL){
+        if(strncmp(token, "Content-Length:", 15) == 0){
+            sscanf(token, "%*s %ld", &request->content_length);
+        }
+
+        if(strncmp(token, "\r", 2) == 0){
+            token_counter += 2;
+
+            // //
+            // printf("OMFG IT WORKS!!!!!!!!!!!!!!!!!!!!!!!\n"); 
+            // printf("[%d] (1) token:\n%s=====\n", comm_fd, token);
+            // fflush(stdout);
+            // //
+
+            //set token to point to next thing after double \r\n
+            token = strtok(NULL, "\n");
+
+            break;
+        }
+        token_counter += strlen(token) + 1;
+        token = strtok(NULL, "\n");
+    }
+    
+    // printf("[%d] token counter = %ld\n", comm_fd, token_counter);
+
+    //right here, *token is pointing at the start of the body
+    // printf("[%d] token:%s=====\n", comm_fd, token);
+
+    // check: if() might not be necessary
+    // if(strlen(buf) > token_counter){
+        size_t copyBytes = (strlen(buf)) - token_counter;
+        strncpy(request->body, token, copyBytes);
+        
+        //
+        // printf("COPYBYTES: strlen(buf) - token counter = %ld\n", copyBytes);
+        // printf("[%d] body strlen:%ld=====\n", comm_fd, strlen(request->body));
+        //
+
+        //CHECK: experimental
+        if(copyBytes != strlen(request->body)){
+            strcat(request->body, "\n");
+            
+            //
+            // printf("body after concat:%s=====\nstrlen(body) = %ld\n", request->body, strlen(request->body));
+            // fflush(stdout);
+            //
+        }
+
+        //
+        // printf("[%d] body contents:%s=====\n", comm_fd, request->body);
+        // fflush(stdout);
+        //
+
+    // }
+
+    // printf("----------------------------------------\n\n");
+
+    // printf("[%d] PRINT STRUCT TEST--------------------\n", comm_fd);
+    // printStruct(request);
+    // printf("----------------------------------------\n\n");
+
+    // printf("[%d] buf after token:========\n%s=============================\n\n", comm_fd, buf);
+    //analyze response line and headers to know if a message body is present
+    //token pointer should be at the start of the body now
+
+    pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
-    pthread_mutex_lock(&newFileLock); //global lock --> moved here bc sometimes two threads check that theres "no lock yet"
     if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-        fileLock[path] = fileMutex; //create new mutex for file
+        fileLock[path] = fileMutex;
     }
     pthread_mutex_unlock(&newFileLock); //global unlock
 
-    // If here, a fileLock mutex exists
-
     pthread_mutex_lock(&fileLock.at(path));
-    if(strcmp(request->type, "GET") == 0){
-        get_request(comm_fd, request, buf, rflag);
-
-    }else if(strcmp(request->type, "PUT") == 0){
+    if(strcmp(request->type, "PUT") == 0){ //body is present, read message body
         put_request(comm_fd, request, buf, flag, rflag);
-
-    }else{
-        request->status_code = 500; 
-        construct_response(comm_fd, request);
+    }else if(strcmp(request->type, "GET") == 0){
+        get_request(comm_fd, request, buf, rflag);
     }
     pthread_mutex_unlock(&fileLock.at(path));
-}
 
-//port is set to user-specified number or 80 by default
-int getPort (int argc, char *argv[]){
-    int port;
 
-    if((optind++) == (argc-1)){     //port number not specified
-        port = 80;
-    }else{                          //port number specified
-        port = atoi(argv[optind]);
+    // int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
+    // printf("[%d] first recv = %d bytes\n", comm_fd, bytes_recv);
+    // printf("[%d] first buf:\n%s=====\n", comm_fd, buf);
 
-        if (port < 1024){           //invalid port number
-            exit(EXIT_FAILURE);
-        }
-    }
+    // syscallError(comm_fd, bytes_recv, request);
 
-    return port;
+    // parse_request(comm_fd, request, buf, flag);
+
+    // printf("\n------------------------------\n");
+    // printStruct(request);
+    // printf("------------------------------\n\n");
+
+    // // if something bad happened in parse_request(), return to workerThread()
+    // if(request->status_code == 400) return;
+
+    // //TODO: parse in /r/n delimited chunks so that we never miss "Content-Length:""
+    // while(bytes_recv == SIZE){                      //if buf is completely filled
+    //     printf("[%d] bytes_recv == SIZE\n", comm_fd);
+    //     fflush(stdout);
+    //     bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
+    //     printf("[%d] again buf:\n%s=====\n", comm_fd, buf);
+    //     syscallError(comm_fd, bytes_recv, request);
+
+    //     parse_request(comm_fd, request, buf, flag); //parse for content length
+    //     memset(buf, 0, SIZE);
+    // }
+
+    // char path[50];
+    // pthread_mutex_lock(&newFileLock); //global lock --> moved here bc sometimes two threads check that theres "no lock yet"
+    // if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
+    //     pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
+    //     fileLock[path] = fileMutex; //create new mutex for file
+    // }
+    // pthread_mutex_unlock(&newFileLock); //global unlock
+
+    // // If here, a fileLock mutex exists
+
+    // pthread_mutex_lock(&fileLock.at(path));
+    // if(strcmp(request->type, "GET") == 0){
+    //     get_request(comm_fd, request, buf, rflag);
+
+    // }else if(strcmp(request->type, "PUT") == 0){
+    //     put_request(comm_fd, request, buf, flag, rflag);
+
+    // }else{
+    //     request->status_code = 500; 
+    //     construct_response(comm_fd, request);
+    // }
+    // pthread_mutex_unlock(&fileLock.at(path));
 }
 
 void* workerThread(void* arg){
@@ -492,6 +655,23 @@ void* workerThread(void* arg){
 
         close(comm_fd);
     }
+}
+
+//port is set to user-specified number or 80 by default
+int getPort (int argc, char *argv[]){
+    int port;
+
+    if((optind++) == (argc-1)){     //port number not specified
+        port = 80;
+    }else{                          //port number specified
+        port = atoi(argv[optind]);
+
+        if (port < 1024){           //invalid port number
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    return port;
 }
 
 int main (int argc, char *argv[]){
