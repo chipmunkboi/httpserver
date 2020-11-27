@@ -351,60 +351,58 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 }
 
 void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
-    int check;
-    int wfile;
-    char path[50];
-    if((check = access(pathName(request, rflag, path), F_OK)) != -1){
+    int wfile;      //to check if write() is successful/how many bytes got written
+    char path[50];  //to store file path
+
+    //check whether or not file already exists
+    if((int check = access(pathName(request, rflag, path), F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
-    
+
     int file;
-    if(request->status_code != 400){
+    if(request->status_code != 400){                                            //if bad request, don't create the file
         file = open(path, O_CREAT | O_RDWR | O_TRUNC);
     }
-    if(file == -1){perror("open");}
+    if(file == -1){perror("open");} //CHECK: do we need to implement status codes here??
     syscallError(comm_fd, file, request);
     
     int bytes_recv;
     //no body bytes in buf, safe to recv
     if((request->content_length != 0) && (strlen(request->body) == 0)){    
         while(request->content_length > 0){
-            if(request->content_length < SIZE){
+            if(request->content_length < SIZE){                                 //buf has stuff in it, but not completely full
                 bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
-                fflush(stdout);
-            }else{   
+
+            }else{                                                              //buf is completely full, can recv SIZE bytes
                 bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
-                fflush(stdout);
             }
 
-            if(request->status_code != 400){
+            if(request->status_code != 400){                                    //if bad request, don't write 
                 wfile = write(file, buf, bytes_recv);
                 syscallError(comm_fd, wfile, request);
             }
 
-            request->content_length = request->content_length - bytes_recv;
+            request->content_length = request->content_length - bytes_recv;     //decrement content_length by # bytes written
         }
-        fflush(stdout);
-        //if file already exists return 200, if not return 201
+
+        //if not bad req: if file already exists return 200, else return 201
         if(request->status_code != 400){
             if(flag->exists == true) request->status_code = 200;
             else request->status_code = 201;
         }
 
     //at least part of body was in buf, need to write() before checking whether we need to recv() again
-    }else if((request->content_length != 0) && (strlen(request->body) != 0)){ 
-        fflush(stdout); 
-            
-        if(request->status_code != 400){
+    }else if((request->content_length != 0) && (strlen(request->body) != 0)){            
+        if(request->status_code != 400){                                        //write what was in buf already
             wfile = write(file, request->body, strlen(request->body));
             syscallError(comm_fd, wfile, request);
         }
 
         request->content_length = request->content_length - strlen(request->body);
 
-        if((request->collector != NULL) && (strlen(request->collector) != 0)){
+        if((request->collector != NULL) && (strlen(request->collector) != 0)){  //ensure that we write everything from buf
             if(request->status_code != 400){
                 wfile = write(file, request->collector, strlen(request->collector));
                 syscallError(comm_fd, wfile, request);
@@ -412,17 +410,18 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
             request->content_length = request->content_length - strlen(request->collector);
         }
 
-        if(request->content_length != 0){
+        //done writing from buf, can now start recv-ing
+        if(request->content_length != 0){                                           
             while(request->content_length > 0){
-                if(request->content_length < SIZE){
-                    bytes_recv = recv(comm_fd, buf, request->content_length, 0);    //recv content_length bytes of body
+                if(request->content_length < SIZE){                                 
+                    bytes_recv = recv(comm_fd, buf, request->content_length, 0);  
 
-                }else{
-                    bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
+                }else{                                                             
+                    bytes_recv = recv(comm_fd, buf, SIZE, 0);                       
                 }
 
                 if(request->status_code != 400){
-                    wfile = write(file, buf, bytes_recv);
+                    wfile = write(file, buf, bytes_recv);                           
                     syscallError(comm_fd, wfile, request);
                 }
 
@@ -430,7 +429,7 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
             }            
         }
 
-        //if file already exists return 200, if not return 201
+        //if not bad req: if file already exists return 200, else return 201
         if(request->status_code != 400){
             if(flag->exists == true) request->status_code = 200;
             else request->status_code = 201;
@@ -445,13 +444,14 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
             }
         }
 
+        //to ensure that we have written EVERYTHING previously recv-ed
         if((request->collector != NULL) && (strlen(request->collector) != 0)){
             if(request->status_code != 400){
                 write(file, request->collector, strlen(request->collector));
             }
-
         }
 
+        //continue recv-ing and writing until EOF
         while((bytes_recv = recv(comm_fd, buf, SIZE, 0)) > 0){
             if(request->status_code != 400){
                 write(file, buf, bytes_recv);
@@ -460,15 +460,15 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
     }
 
     //if redundancy
-    if(rflag){
+    if(rflag && request->status_code!=400){ //if bad request, don't need to copy
         close(file);
         file = open(path, O_RDONLY);
         copyFiles(request->filename, file);
     }
 
-    construct_response(comm_fd, request);
+    construct_response(comm_fd, request); //construct respond & send
 
-    memset(path, 0, 50);
+    memset(path, 0, 50); //probably not needed
     close(file); 
 }
 
@@ -476,27 +476,22 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     int bytes_recv = recv(comm_fd, buf, SIZE, 0); //first recv
     syscallError(comm_fd, bytes_recv, request);
 
-    // printf("\n\n[%d]FIRST RECV------------------------\n", comm_fd);
-    // printf("%s===\n", buf);
-    // printf("[%d]-----------------------------------\n", comm_fd);
-
-
     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
     //check that httpversion is "HTTP/1.1"
     if(strcmp(request->httpversion, "HTTP/1.1") != 0){
         request->status_code = 400;
-        // construct_response(comm_fd, request); //temp comment
+        // construct_response(comm_fd, request); //commented to help fix invalid name problem
     }
 
     //check that filename is made of 10 ASCII characters
     else if(!valid_name(flag, request->filename)){
         request->status_code = 400;
-        // construct_response(comm_fd, request); //temp comment
+        // construct_response(comm_fd, request); //commented to help fix invalid name problem
     }
 
     char temp[SIZE];
-    strncpy(temp, buf, SIZE); //protects buf
+    strncpy(temp, buf, SIZE); //protects buf from being 
     size_t token_counter = 0;
 
     //parse buf contents until end of header (\r\n\r\n) is reached
@@ -508,32 +503,27 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         }
 
         if(strncmp(token, "\r", 2) == 0){
-            token_counter += 2; //+2 is to make up for the two \n's that are going to be cut off
-            // token = strtok(NULL, "\n"); //doesn't work
-            break;
+            token_counter += 2;                         //+2 is to make up for the two \n's that are going to be cut off
+            break;                                      //break: don't need to tokenize any further
         }
-        token_counter += strlen(token) + 1; //+1 is to make up for the one \n that gets cut off
+        token_counter += strlen(token) + 1;             //+1 is to make up for the one \n that gets cut off
         token = strtok(NULL, "\n");
     }
 
-    ptr = ptr + token_counter;
+    ptr = ptr + token_counter;                          //move ptr to front of body  
 
-    // token = token + 1; //token is now pointing to the front of body //doesn't work
-   
+    size_t copyBytes = (strlen(buf)) - token_counter;   //copyBytes = # of body bytes that have been recv-ed
 
-    size_t copyBytes = (strlen(buf)) - token_counter; //copyBytes = # of body bytes that have been recv-ed
-
-    strncpy(request->body, ptr, copyBytes);
-
+    strncpy(request->body, ptr, copyBytes);             //strncpy copyBytes into ptr (whole body)
 
     //CHECK: experimental
     if(copyBytes != strlen(request->body)){
         printf("IN EXP\n");
-        if(copyBytes == (strlen(request->body)+1)){ //if body is missing one byte, it's probably due to an \n being cut
+        if(copyBytes == (strlen(request->body)+1)){     //if body is missing one byte, it's probably due to an \n being cut
         strcat(request->body, "\n");
         
-        }else{ //if # of body bytes != # body bytes we have...
-            request->collector = &buf[strlen(request->body)+token_counter]; //... retrieve the rest from the original buffer buf
+        }else{                                          //if # of body bytes != # body bytes we have...
+            request->collector = &buf[strlen(request->body)+token_counter]; //...retrieve the rest from the original buffer buf
         }
     }
 
@@ -703,19 +693,19 @@ int main (int argc, char *argv[]){
     //setsockopt: helps in reusing address and port
     int opt = 1;
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
-        // perror("setsockopt");
+        perror("setsockopt");
         exit(EXIT_FAILURE);
     }
 
     //bind server address to open socket
     if (bind(server_socket, (struct sockaddr *)&server_addr, addrlen) < 0){
-        // perror("bind");
+        perror("bind");
         exit(EXIT_FAILURE);
     }
 
     //listen for incoming connections
     if (listen(server_socket, 500) < 0){
-        // perror("listen");
+        perror("listen");
         exit(EXIT_FAILURE);
     }
 
@@ -741,6 +731,7 @@ int main (int argc, char *argv[]){
             fflush(stdout);
         }
     }
+
     //at end of loop, we will have N worker threads that are sleeping
     
     //dispatch thread
