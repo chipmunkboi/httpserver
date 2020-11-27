@@ -572,58 +572,12 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }else if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, buf, rflag);
     }
+    else{
+        request->status_code = 500;
+        construct_response(comm_fd, request);
+    }
     pthread_mutex_unlock(&fileLock.at(path));
 
-
-    // int bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv and parse once
-    // printf("[%d] first recv = %d bytes\n", comm_fd, bytes_recv);
-    // printf("[%d] first buf:\n%s=====\n", comm_fd, buf);
-
-    // syscallError(comm_fd, bytes_recv, request);
-
-    // parse_request(comm_fd, request, buf, flag);
-
-    // printf("\n------------------------------\n");
-    // printStruct(request);
-    // printf("------------------------------\n\n");
-
-    // // if something bad happened in parse_request(), return to workerThread()
-    // if(request->status_code == 400) return;
-
-    // //TODO: parse in /r/n delimited chunks so that we never miss "Content-Length:""
-    // while(bytes_recv == SIZE){                      //if buf is completely filled
-    //     printf("[%d] bytes_recv == SIZE\n", comm_fd);
-    //     fflush(stdout);
-    //     bytes_recv = recv(comm_fd, buf, SIZE, 0);   //recv again
-    //     printf("[%d] again buf:\n%s=====\n", comm_fd, buf);
-    //     syscallError(comm_fd, bytes_recv, request);
-
-    //     parse_request(comm_fd, request, buf, flag); //parse for content length
-    //     memset(buf, 0, SIZE);
-    // }
-
-    // char path[50];
-    // pthread_mutex_lock(&newFileLock); //global lock --> moved here bc sometimes two threads check that theres "no lock yet"
-    // if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
-    //     pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-    //     fileLock[path] = fileMutex; //create new mutex for file
-    // }
-    // pthread_mutex_unlock(&newFileLock); //global unlock
-
-    // // If here, a fileLock mutex exists
-
-    // pthread_mutex_lock(&fileLock.at(path));
-    // if(strcmp(request->type, "GET") == 0){
-    //     get_request(comm_fd, request, buf, rflag);
-
-    // }else if(strcmp(request->type, "PUT") == 0){
-    //     put_request(comm_fd, request, buf, flag, rflag);
-
-    // }else{
-    //     request->status_code = 500; 
-    //     construct_response(comm_fd, request);
-    // }
-    // pthread_mutex_unlock(&fileLock.at(path));
 }
 
 void* workerThread(void* arg){
