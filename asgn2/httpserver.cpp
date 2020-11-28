@@ -21,7 +21,7 @@
 #include <queue>         //queue
 #include <unordered_map> // C++ library for hashmap 
 
-#define SIZE 16384       //16 KB buffer restriction
+#define SIZE 4096       //4 KB buffer restriction
 
 using namespace std;
 // create queue for requests 
@@ -151,15 +151,15 @@ bool valid_name (struct flags* flag, char* tempname){
     return true;
 }
 
-char* pathName(struct httpObject* request, bool rflag, char* path){
+void pathName(struct httpObject* request, bool rflag, char* path){
     if(rflag){
         strcpy(path, "./copy1/");
+        // printf("path in pathName BEFORE COPY: %s\n", path);
+        // fflush(stdout); 
         strcat(path, request->filename);
-        char* copy1final = path;
-        return copy1final; 
+
     }
-    strcpy(path, request->filename);
-    return request->filename;
+    else strcpy(path, request->filename);
 }
 
 void copyFiles(char* filename, int source, bool isMain = false){
@@ -222,21 +222,41 @@ void copyFiles(char* filename, int source, bool isMain = false){
 }
 
 //test to see if work with path/filename
-bool compareFiles(int file1, int file2){
+bool compareFiles(const char* fileOne, const char* fileTwo){
     char buf1[SIZE];
     char buf2[SIZE];
-
+    memset(buf1, 0, SIZE);
+    memset(buf2, 0, SIZE);
+    int file1 = open(fileOne, O_RDONLY);
+    int file2 = open(fileTwo, O_RDONLY);
     //compare a and b
     while(read(file1, buf1, SIZE) > 0){ //while file1 != EOF
-        if(read(file2, buf2, SIZE) < 1){
+        //If file2 is empty
+        if(read(file2, buf2, SIZE) == 0){
+            close(file1);
+            close(file2);
             return false;
         }
-
         int same = memcmp(buf1, buf2, SIZE);
-        if(!same){
+        //If contents of buffer is different
+        if(same != 0){
+            close(file1);
+            close(file2);
             return false;
         }
+        //clear buffer before next read
+        memset(buf1, 0, SIZE);
+        memset(buf2, 0, SIZE);
     }
+    // If file2 still have things to read
+    if(read(file2, buf2, SIZE) > 0){
+        close(file1);
+        close(file2);
+        return false;
+    }
+    //otherwise true
+    close(file1);
+    close(file2);
     return true;
 }
 
@@ -281,7 +301,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
     //check
     char path[50];
-    int file = open(pathName(request, rflag, path), O_RDONLY);
+    pathName(request, rflag, path);
+    int file = open(path, O_RDONLY);
     int sendfile;
     if (file == -1){
         if(errno==ENOENT){ 
@@ -304,36 +325,47 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
             //Create the path
             char copy2[50] = "./copy2/";
             char copy3[50] = "./copy3/";
-
+            //path is ./copy1/filename
             strcat(copy2, request->filename);
             strcat(copy3, request->filename);
-
-            int file2 = open(copy2, O_RDONLY);
-            int file3 = open(copy3, O_RDONLY);
+            //because compareFiles will open again
+            close(file);
+            if(compareFiles(path, copy2)){
+                sendfile = open(path, O_RDONLY);
+            }
+            else if(compareFiles(path, copy3)){
+                 sendfile = open(path, O_RDONLY);
+            }
+            else if(compareFiles(copy2, copy3)){
+                 sendfile = open(copy2, O_RDONLY);
+    
+            }
+            // int file2 = open(copy2, O_RDONLY);
+            // int file3 = open(copy3, O_RDONLY);
             
-            if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
-                close(file);
-                close(file2);
-                close(file3);
-                sendfile = open(path, O_RDONLY); 
+            // if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
+            //     close(file);
+            //     close(file2);
+            //     close(file3);
+            //     sendfile = open(copy2, O_RDONLY); 
 
-            }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
-                close(file);
-                close(file2);
-                close(file3);
-                sendfile = open(path, O_RDONLY); 
+            // }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
+            //     close(file);
+            //     close(file2);
+            //     close(file3);
+            //     sendfile = open(path, O_RDONLY); 
 
-            }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
-                close(file);
-                close(file2);
-                close(file3);
-                sendfile = open(copy2, O_RDONLY);
-
-            }else {
-                //If files fail the checks
-                printf("in get_req else, return 500\n");
-                fflush(stdout);
-                request->status_code = 500;
+            // }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
+            //     close(file);
+            //     close(file2);
+            //     close(file3);
+            //     sendfile = open(copy2, O_RDONLY);
+           
+            else {
+            //If files fail the checks
+            printf("in get_req else, return 500\n");
+            fflush(stdout);
+            request->status_code = 500;
             }
 
         }else{
@@ -354,15 +386,17 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
     int wfile;      //to check if write() is successful/how many bytes got written
     int check;
     char path[50];  //to store file path
+    pathName(request, rflag, path);
 
     //check whether or not file already exists
-    if((check = access(pathName(request, rflag, path), F_OK)) != -1){
+    if((check = access(path, F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
 
     int file;
+    // int testWHYNOTWORKS;
     if(request->status_code != 400){                                            //if bad request, don't create the file
         file = open(path, O_CREAT | O_RDWR | O_TRUNC);
     }
@@ -482,15 +516,22 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     //check that httpversion is "HTTP/1.1"
     if(strcmp(request->httpversion, "HTTP/1.1") != 0){
         request->status_code = 400;
-        // construct_response(comm_fd, request); //commented to help fix invalid name problem
+        //If get req is 400 no need to execute to completion
+        if(strcmp(request->type, "GET") == 0){
+            construct_response(comm_fd, request); //commented to help fix invalid name problem
+            return;
+        }
     }
 
     //check that filename is made of 10 ASCII characters
     else if(!valid_name(flag, request->filename)){
         request->status_code = 400;
-        // construct_response(comm_fd, request); //commented to help fix invalid name problem
+        //If get req is 400 no need to execute to completion
+        if(strcmp(request->type, "GET") == 0){
+            construct_response(comm_fd, request); //commented to help fix invalid name problem
+            return;
+        }
     }
-
     char temp[SIZE];
     strncpy(temp, buf, SIZE); //protects buf from being 
     size_t token_counter = 0;
@@ -530,7 +571,8 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     pthread_mutex_lock(&newFileLock); //global lock
     char path[50];
-    if(fileLock.find(pathName(request, rflag, path)) == fileLock.end()){
+    pathName(request, rflag, path);
+    if(fileLock.find(path) == fileLock.end()){
         pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
         fileLock[path] = fileMutex;
     }
