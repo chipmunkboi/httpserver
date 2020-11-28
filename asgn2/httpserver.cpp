@@ -339,29 +339,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
             else if(compareFiles(copy2, copy3)){
                  sendfile = open(copy2, O_RDONLY);
     
-            }
-            // int file2 = open(copy2, O_RDONLY);
-            // int file3 = open(copy3, O_RDONLY);
-            
-            // if(file!=-1 && file2!=-1 && compareFiles(file, file2)){
-            //     close(file);
-            //     close(file2);
-            //     close(file3);
-            //     sendfile = open(copy2, O_RDONLY); 
-
-            // }else if(file != -1 && file3 != -1 && compareFiles(file, file3)){
-            //     close(file);
-            //     close(file2);
-            //     close(file3);
-            //     sendfile = open(path, O_RDONLY); 
-
-            // }else if(file2 != -1 && file3 != -1 && compareFiles(file2, file3)){
-            //     close(file);
-            //     close(file2);
-            //     close(file3);
-            //     sendfile = open(copy2, O_RDONLY);
-           
-            else {
+            }           
+            else{
             //If files fail the checks
             printf("in get_req else, return 500\n");
             fflush(stdout);
