@@ -352,10 +352,11 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
 
 void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
     int wfile;      //to check if write() is successful/how many bytes got written
+    int check;
     char path[50];  //to store file path
 
     //check whether or not file already exists
-    if((int check = access(pathName(request, rflag, path), F_OK)) != -1){
+    if((check = access(pathName(request, rflag, path), F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
