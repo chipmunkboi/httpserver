@@ -260,42 +260,6 @@ bool compareFiles(const char* fileOne, const char* fileTwo){
     return true;
 }
 
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
-    printf("[%d] in parse req\n", comm_fd);
-    if(flag->first_parse){
-        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
-
-        //check that httpversion is "HTTP/1.1"
-        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-        }
-
-        //check that filename is made of 10 ASCII characters
-        else if(!valid_name(flag, request->filename)){
-            printf("before status code 400\n");
-            fflush(stdout);
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-        }
-
-        flag->first_parse = false;
-    }
-    //In executefunctions put line by line into buf by scanning for \r\n instead of scanning it in buf
-    char* token = strtok(buf, "\r\n");
-    while(token){
-        if(strncmp(token, "Content-Length:", 15) == 0){
-            printf("[%d] found content length\n", comm_fd);
-            sscanf(token, "%*s %ld", &request->content_length);
-        }else if(strncmp(token, "\r\n", 2)==0){
-            printf("[%d] should break here\n", comm_fd); //doesn't even go into here
-            fflush(stdout);
-            break;
-        }
-        token = strtok(NULL, "\r\n");
-    }
-}
-
 void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
     memset(buf, 0, SIZE);
 

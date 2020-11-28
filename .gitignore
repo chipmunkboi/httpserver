@@ -36,9 +36,4 @@ a.out
 # ignore all .vscode folders
 .vscode*/
 asgn1/temp/
-asgn2/Examples/
-asgn2/testing/
-asgn2/copy1/
-asgn2/copy2/
-asgn2/copy3/
 asgn2/httpserver
