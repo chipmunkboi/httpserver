@@ -9,14 +9,14 @@ README.md</p>
 3. Makefile
 4. README.md
 
-**To run:**
-    **Server side:**
+**To run:**<br>
+    **Server side:**<br>
     1. "make"
     2. "httpserver [hostname/IP address] [port number] [-N] [# of worker threads] [-r]"
         - port number argument is optional; default is 80
         - "-N" & "# of worker threads" is optional; default number is 4
         - "-r" is optional; flag toggles redundancy on/off
-    **Client side examples:**
+    **Client side examples:**<br>
     1. GET: curl http://localhost:8080/0123456789 > 0123456789.output &
     2. PUT: curl -T sourcefile http://localhost:8080/0123456789 > 0123456789.output &
 
