@@ -11,13 +11,13 @@ README.md</p>
 
 **To run:**<br>
     **Server side:**<br>
-    1. "make"
-    2. "httpserver [hostname/IP address] [port number] [-N] [# of worker threads] [-r]"
-        - port number argument is optional; default is 80
-        - "-N" & "# of worker threads" is optional; default number is 4
+    1. "make"<br>
+    2. "httpserver [hostname/IP address] [port number] [-N] [# of worker threads] [-r]"<br>
+        - port number argument is optional; default is 80<br>
+        - "-N" & "# of worker threads" is optional; default number is 4<br>
         - "-r" is optional; flag toggles redundancy on/off<br>
     **Client side examples:**<br>
-    1. GET: curl http://localhost:8080/0123456789 > 0123456789.output &
+    1. GET: curl http://localhost:8080/0123456789 > 0123456789.output &<br>
     2. PUT: curl -T sourcefile http://localhost:8080/0123456789 > 0123456789.output &
 
 **Known limitations/issues:**<br>
