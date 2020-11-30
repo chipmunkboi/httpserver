@@ -10,11 +10,15 @@ README.md</p>
 4. README.md
 
 **To run:**
-1. "make"
-2. "httpserver [hostname/IP address] [port number] [-N] [# of worker threads] [-r]"
-    - port number argument is optional; default is 80
-    - "-N" & "# of worker threads" is optional; default number is 4
-    - "-r" is optional; flag toggles redundancy on/off
+    **Server side:**
+    1. "make"
+    2. "httpserver [hostname/IP address] [port number] [-N] [# of worker threads] [-r]"
+        - port number argument is optional; default is 80
+        - "-N" & "# of worker threads" is optional; default number is 4
+        - "-r" is optional; flag toggles redundancy on/off
+    **Client side examples:**
+    1. GET: curl http://localhost:8080/0123456789 > 0123456789.output &
+    2. PUT: curl -T sourcefile http://localhost:8080/0123456789 > 0123456789.output &
 
 **Known limitations/issues:**<br>
 A limitation with the code is that if the request header contains
