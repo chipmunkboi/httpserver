@@ -615,7 +615,7 @@ int main (int argc, char *argv[]){
         }
     }
 
-    // // UNCOMMENT BEFORE SUBMIT
+    // LEAVE COMMENTED: https://piazza.com/class/kfqgk8ox2mi4a1?cid=430
     //if -r is present, make three different copies of all files in the server
     // if(rflag == true){
     //     DIR *d;
