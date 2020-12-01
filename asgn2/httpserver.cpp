@@ -503,7 +503,6 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     //CHECK: experimental
     if(copyBytes != strlen(request->body)){
-        printf("IN EXP\n");
         if(copyBytes == (strlen(request->body)+1)){     //if body is missing one byte, it's probably due to an \n being cut
         strcat(request->body, "\n");
         
@@ -615,7 +614,7 @@ int main (int argc, char *argv[]){
         }
     }
 
-    // LEAVE COMMENTED: https://piazza.com/class/kfqgk8ox2mi4a1?cid=430
+    // LEAVE COMMENTED OUT: https://piazza.com/class/kfqgk8ox2mi4a1?cid=430
     //if -r is present, make three different copies of all files in the server
     // if(rflag == true){
     //     DIR *d;
@@ -715,6 +714,7 @@ int main (int argc, char *argv[]){
         if(tcreateerror != 0){
             printf("\nThread %d cannot be created: [%s]", i, strerror(tcreateerror));
             fflush(stdout);
+            exit(EXIT_FAILURE);
         }
     }
 
