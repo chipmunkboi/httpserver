@@ -1,8 +1,4 @@
-# YIMING TESTS BELOW
-# echo Hello World>t1
-# head -c 80000 /dev/urandom | od -x > t2
-# head -c 200 /dev/urandom > b1
-
+# Multithreading testing with/without -r
 
 curl -T cmd1.output http://localhost:8080/aaaaaaaaaa -v &
 curl -T cmd2.output http://localhost:8080/aaaaaaaaaa -v &
@@ -22,10 +18,10 @@ curl http://localhost:8080/cccccccccc -v &
 curl http://localhost:8080/dddddddddd -v & 
 
 
-dd if=/dev/urandom of=d24 count=16 bs=1024 status=none
-printf """PUT /13atestNoL HTTP/1.1\r\n\r\n""" \
-| cat - d24 > nc-test24.cmds
-ncat -d 2 localhost 8080 < nc-test24.cmds
+# dd if=/dev/urandom of=d24 count=16 bs=1024 status=none
+# printf """PUT /13atestNoL HTTP/1.1\r\n\r\n""" \
+# | cat - d24 > nc-test24.cmds
+# ncat -d 2 localhost 8080 < nc-test24.cmds
 
 # GET REQUESTS
 # curl http://localhost:8080/aaaaaaaaaa -v                    # valid 
