@@ -3,36 +3,21 @@
 #include <sys/stat.h>
 #include <netdb.h>
 #include <stdlib.h>
-#include <netinet/in.h> //inet_aton
-#include <arpa/inet.h>  //inet_aton
-#include <pthread.h>    //threads
 
 #include <string.h>     //memset
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
 #include <fcntl.h>      //open
 #include <ctype.h>      //isalnum
-#include <ctype.h>      //isdigit
-#include <dirent.h>     //for parsing directory
+#include <errno.h>      
+#include <err.h>
 
-#include <errno.h>      //erno
-#include <err.h>        //errno
+#include <netinet/in.h> //inet_aton
+#include <arpa/inet.h>  //inet_aton
+
 #include <stdio.h>      //printf, perror
 
-#include <queue>         //queue
-#include <unordered_map> // C++ library for hashmap 
-
-#define SIZE 4096       //4 KB buffer restriction
-
-using namespace std;
-// create queue for requests 
-queue <int> commQ;
-
-//create global lock for new files
-pthread_mutex_t newFileLock = PTHREAD_MUTEX_INITIALIZER;
-
-// create hashmap for file locks
-unordered_map<string, pthread_mutex_t> fileLock;
+#define SIZE 4096       //4 KB
 
 struct httpObject {
     char type[4];           //PUT, GET
@@ -53,19 +38,12 @@ struct flags {
     bool fileL;
 };
 
-struct requestLock{
-    pthread_cond_t *newReq;     //cond var for threads getting new request
-    pthread_mutex_t *queueLock; //mutex for queue
-    bool rflag;
-};
-
-//used to check that all parts of struct are correct 
+//used to check that all parts of struct are correct
 void printStruct(struct httpObject* request){
-    printf("type: %s=\n", request->type);
-    printf("ver: %s=\n", request->httpversion);
-    printf("file: %s=\n", request->filename);
-    printf("content length: %ld=\n", request->content_length);
-    fflush(stdout);
+    printf("type: %s\n", request->type);
+    printf("ver: %s\n", request->httpversion);
+    printf("file: %s\n", request->filename);
+    printf("content length: %ld\n", request->content_length);
 }
 
 void clearStruct(struct httpObject* request){
@@ -82,9 +60,6 @@ void clearFlags(struct flags* flag){
     flag->exists = false;
     flag->first_parse = true;
     flag->good_name = false;
-    flag->fileB = false;
-    flag->fileR = false;
-    flag->fileL = false;
 }
 
 const char* getCode (int status_code){
@@ -120,39 +95,40 @@ void construct_response (int comm_fd, struct httpObject* request){
     strcat (response, "Content-Length: ");
     strcat (response, length_string);
     strcat (response, "\r\n\r\n");
-    
+
     send(comm_fd, response, strlen(response), 0);
 }
 
-void syscallError(int comm_fd, int file, struct httpObject* request){
-    if(file == -1){
-        printf("syscallError: %d = %s\n", errno, strerror(errno));
+void syscallError(int fd, struct httpObject* request){
+    if(fd == -1){
         request->status_code = 500;
-        construct_response(comm_fd, request);
+        // printf("errno %d: %s\n", errno, strerror(errno));
+        // fflush(stdout);
+        construct_response(fd, request);
     }
 }
 
 //returns TRUE if name is valid and FALSE if name is invalid
-bool valid_name (struct flags* flag, char* tempname){
+bool valid_name (char* filename, struct flags* flag){
     //remove "/" from front of file name
-    if(tempname[0] == '/'){
-        memmove(tempname, tempname+1, strlen(tempname));
+    if(filename[0] == '/'){
+        memmove(filename, filename+1, strlen(filename));
     }
 
     // check that name is 10 char long; if not, check if name is a special request
-    if(strlen(tempname) != 10){
-        if((strlen(tempname) == 1) && (strncmp(tempname, "b", 1) == 0)){ 
-            flag->goodname = true;
+    if(strlen(filename) != 10){
+        if((strlen(filename) == 1) && (strncmp(filename, "b", 1) == 0)){ 
+            flag->good_name = true;
             flag->fileB = true;
             return true;
 
-        }else if((strncmp(tempname, "r", 1) == 0){ //might not be just "r" (i.e. r/[timestamp])
-            flag->goodname = true;
+        }else if(strncmp(filename, "r", 1) == 0){ //might not be just "r" (i.e. r/[timestamp])
+            flag->good_name = true;
             flag->fileR = true;
             return true;
 
-        }else if((strlen(tempname) == 1) && (strncmp(tempname, "l", 1) == 0)){
-            flag->goodname = true;
+        }else if((strlen(filename) == 1) && (strncmp(filename, "l", 1) == 0)){
+            flag->good_name = true;
             flag->fileL = true;
             return true;
             
@@ -164,7 +140,7 @@ bool valid_name (struct flags* flag, char* tempname){
 
     // check that all chars are ASCII chars
     for(int i=0; i<10; i++){
-        if(!isalnum(tempname[i])){
+        if(!isalnum(filename[i])){
             flag->good_name = false;
             return false;
         }
@@ -174,118 +150,9 @@ bool valid_name (struct flags* flag, char* tempname){
     return true;
 }
 
-void pathName(struct httpObject* request, bool rflag, char* path){
-    if(rflag){
-        strcpy(path, "./copy1/");
-        // printf("path in pathName BEFORE COPY: %s\n", path);
-        // fflush(stdout); 
-        strcat(path, request->filename);
-
-    }
-    else strcpy(path, request->filename);
-}
-
-void copyFiles(char* filename, int source, bool isMain = false){
-    char buffer[SIZE];
-
-    //create path "./copy#/filename" to navigate from httpserver directory
-    char copy1[20] = "./copy1/";
-    char copy2[20] = "./copy2/";
-    char copy3[20] = "./copy3/";
-    strcat(copy1, filename);
-    strcat(copy2, filename);
-    strcat(copy3, filename);
-    
-    //Create 3 copies of the files
-    int des1;
-    if(isMain){
-        des1 = open(copy1, O_CREAT | O_RDWR | O_TRUNC);
-        // if (des1==-1){
-        //     if(errno == ENOENT){
-        //     request->status_code = 404;
-        //     }else if(errno == EACCES){
-        //         request->status_code = 403;
-        //     }else{
-        //         request->status_code = 400;
-        //     }
-        // }
-        perror("opening copy1 folder"); //
-    }
-
-    int des2 = open(copy2, O_CREAT | O_RDWR | O_TRUNC);
-    int des3 = open(copy3, O_CREAT | O_RDWR | O_TRUNC);
-    if((des2==-1) || (des3==-1)){
-        perror("opening copy2/copy3 folder");
-        // if(errno == ENOENT){
-        //     request->status_code = 404;
-        // }else if(errno == EACCES){
-        //     request->status_code = 403;
-        // }else{
-        //     request->status_code = 400;
-        // }
-    }
-
-    //Copies content from the current file to all files
-    while(read(source, buffer, 1) != 0){
-        if(isMain){
-            int write1 = write(des1, buffer, 1);
-            if(write1==-1) perror("writing to copy1 folders");
-        }
-        int write2 = write(des2, buffer, 1);
-        int write3 = write(des3, buffer, 1);
-        if((write2==-1) | (write3==-1)){
-            perror("writing to copy 2/3 folders");
-        }
-    }
-
-    //close files
-    if(isMain) close(des1);
-    close(des2);
-    close(des3);
-}
-
-//test to see if work with path/filename
-bool compareFiles(const char* fileOne, const char* fileTwo){
-    char buf1[SIZE];
-    char buf2[SIZE];
-    memset(buf1, 0, SIZE);
-    memset(buf2, 0, SIZE);
-    int file1 = open(fileOne, O_RDONLY);
-    int file2 = open(fileTwo, O_RDONLY);
-    //compare a and b
-    while(read(file1, buf1, SIZE) > 0){ //while file1 != EOF
-        //If file2 is empty
-        if(read(file2, buf2, SIZE) == 0){
-            close(file1);
-            close(file2);
-            return false;
-        }
-        int same = memcmp(buf1, buf2, SIZE);
-        //If contents of buffer is different
-        if(same != 0){
-            close(file1);
-            close(file2);
-            return false;
-        }
-        //clear buffer before next read
-        memset(buf1, 0, SIZE);
-        memset(buf2, 0, SIZE);
-    }
-    // If file2 still have things to read
-    if(read(file2, buf2, SIZE) > 0){
-        close(file1);
-        close(file2);
-        return false;
-    }
-    //otherwise true
-    close(file1);
-    close(file2);
-    return true;
-}
-
-void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag){
+void get_request (int comm_fd, struct httpObject* request, char* buf){
     memset(buf, 0, SIZE);
-
+    
     //special request files are assumed not to exist, so no point in trying to open() them
     if(fileB){
         //create name for folder (append timestamp to "./backup-")
@@ -311,8 +178,8 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
     //construct response; no need to do rest of GET
     //close the file
 
-    int file = open(path, O_RDONLY);
-    int sendfile;
+    int file = open(request->filename, O_RDONLY);
+
     if (file == -1){
         if(errno==ENOENT){ 
             request->status_code = 404;
@@ -324,43 +191,36 @@ void get_request (int comm_fd, struct httpObject* request, char* buf, bool rflag
         construct_response(comm_fd, request);
     }else{
         request->status_code = 200;
-
-        //get content length
         struct stat size;
         fstat(file, &size);
         request->content_length = size.st_size;
 
         construct_response(comm_fd, request);
 
-        int check;
-        while((check = read(file, buf, 1)) != 0){
+        while(read(file, buf, 1) != 0){
             send(comm_fd, buf, 1, 0); 
         } 
     }
+    
     close(file);
 }
 
-void put_request(int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     int wfile;      //to check if write() is successful/how many bytes got written
     int check;
-    char path[50];  //to store file path
-    pathName(request, rflag, path);
 
-    //check whether or not file already exists
-    if((check = access(path, F_OK)) != -1){
+    //check whether file already exists
+    if((check = access(request->filename, F_OK)) != -1){
         flag->exists = true;
     }else{
         flag->exists = false;
     }
+    // syscallError(check, request);
 
-    int file;
-    // int testWHYNOTWORKS;
-    if(request->status_code != 400){                                            //if bad request, don't create the file
-        file = open(path, O_CREAT | O_RDWR | O_TRUNC);
-    }
-    if(file == -1){perror("open");} //CHECK: do we need to implement status codes here??
-    syscallError(comm_fd, file, request);
-    
+    int file = open(request->filename, O_CREAT | O_RDWR | O_TRUNC);
+    if(file == -1){perror("open");}
+    // syscallError(file, request);
+
     int bytes_recv;
     //no body bytes in buf, safe to recv
     if((request->content_length != 0) && (strlen(request->body) == 0)){    
@@ -374,7 +234,7 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
 
             if(request->status_code != 400){                                    //if bad request, don't write 
                 wfile = write(file, buf, bytes_recv);
-                syscallError(comm_fd, wfile, request);
+                // syscallError(comm_fd, wfile, request);
             }
 
             request->content_length = request->content_length - bytes_recv;     //decrement content_length by # bytes written
@@ -390,7 +250,7 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
     }else if((request->content_length != 0) && (strlen(request->body) != 0)){            
         if(request->status_code != 400){                                        //write what was in buf already
             wfile = write(file, request->body, strlen(request->body));
-            syscallError(comm_fd, wfile, request);
+            // syscallError(comm_fd, wfile, request);
         }
 
         request->content_length = request->content_length - strlen(request->body);
@@ -398,7 +258,7 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
         if((request->collector != NULL) && (strlen(request->collector) != 0)){  //ensure that we write everything from buf
             if(request->status_code != 400){
                 wfile = write(file, request->collector, strlen(request->collector));
-                syscallError(comm_fd, wfile, request);
+                // syscallError(comm_fd, wfile, request);
             }
             request->content_length = request->content_length - strlen(request->collector);
         }
@@ -415,7 +275,7 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
 
                 if(request->status_code != 400){
                     wfile = write(file, buf, bytes_recv);                           
-                    syscallError(comm_fd, wfile, request);
+                    // syscallError(comm_fd, wfile, request);
                 }
 
                 request->content_length = request->content_length - bytes_recv;
@@ -450,24 +310,50 @@ void put_request(int comm_fd, struct httpObject* request, char* buf, struct flag
                 write(file, buf, bytes_recv);
             }
         }
-    }
+    }     
 
-    //if redundancy
-    if(rflag && request->status_code!=400){ //if bad request, don't need to copy
-        close(file);
-        file = open(path, O_RDONLY);
-        copyFiles(request->filename, file);
-    }
-
-    construct_response(comm_fd, request); //construct respond & send
-
-    memset(path, 0, 50); //probably not needed
+    construct_response(comm_fd, request);
     close(file); 
 }
 
-void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag, bool rflag){
+void set_first_parse (struct flags* flag, bool value){
+    flag->first_parse = value;
+}
+
+void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
+    if(flag->first_parse){
+        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
+
+        //check that httpversion is "HTTP/1.1"
+        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+            // return;
+        
+        //check that filename is made of 10 ASCII characters
+        }else if(!valid_name(request->filename, flag)){
+            request->status_code = 400;
+            construct_response(comm_fd, request);
+            // return;
+        }
+
+        set_first_parse(flag, false);
+    }
+
+    char* token = strtok(buf, "\r\n");
+    while(token){
+        if(strncmp(token, "Content-Length:", 15) == 0){
+            sscanf(token, "%*s %ld", &request->content_length);
+        }else if(strncmp(token, "\r\n", 2)==0){
+            break;
+        }
+        token = strtok(NULL, "\r\n");
+    }
+}
+
+void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
     int bytes_recv = recv(comm_fd, buf, SIZE, 0); //first recv
-    syscallError(comm_fd, bytes_recv, request);
+    // syscallError(comm_fd, bytes_recv, request);
 
     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
@@ -482,7 +368,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     }
 
     //check that filename is made of 10 ASCII characters
-    else if(!valid_name(flag, request->filename)){
+    else if(!valid_name(request->filename, flag)){
         request->status_code = 400;
         //If get req is 400 no need to execute to completion
         if(strcmp(request->type, "GET") == 0){
@@ -490,8 +376,9 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
             return;
         }
     }
+
     char temp[SIZE];
-    strncpy(temp, buf, SIZE); //protects buf from being 
+    strncpy(temp, buf, SIZE); //protects buf from being modified
     size_t token_counter = 0;
 
     //parse buf contents until end of header (\r\n\r\n) is reached
@@ -526,72 +413,29 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         }
     }
 
-    pthread_mutex_lock(&newFileLock); //global lock
-    char path[50];
-    pathName(request, rflag, path);
-    if(fileLock.find(path) == fileLock.end()){
-        pthread_mutex_t fileMutex = PTHREAD_MUTEX_INITIALIZER;
-        fileLock[path] = fileMutex;
-    }
-    pthread_mutex_unlock(&newFileLock); //global unlock
-
-    pthread_mutex_lock(&fileLock.at(path));
     if(strcmp(request->type, "PUT") == 0){ //body is present, read message body
-        put_request(comm_fd, request, buf, flag, rflag);
+        put_request(comm_fd, request, buf, flag);
     }else if(strcmp(request->type, "GET") == 0){
-        get_request(comm_fd, request, buf, rflag);
+        get_request(comm_fd, request, buf);
     }
     else{
         request->status_code = 500;
         construct_response(comm_fd, request);
     }
-    pthread_mutex_unlock(&fileLock.at(path));
-
-}
-
-void* workerThread(void* arg){
-    //created pointer to the locks/conditional variables
-    pthread_cond_t *newReq = ((struct requestLock*)arg)->newReq;
-    pthread_mutex_t *queueLock = ((struct requestLock*)arg)->queueLock;
-
-    bool rflag = (((struct requestLock*)arg)->rflag);
-
-    struct httpObject request;
-    struct flags flag;
-    char buf[SIZE];
-    int comm_fd;
-    while(true){
-        //thread sleeps until an fd is pushed into queue
-        if(commQ.empty()){
-            pthread_cond_wait(newReq, queueLock);
-        }
-        else pthread_mutex_lock(queueLock);
-        
-        comm_fd = commQ.front(); //front of queue has oldest fd
-        commQ.pop();
-        pthread_mutex_unlock(queueLock);
-
-        flag.first_parse = true;
-        executeFunctions(comm_fd, &request, buf, &flag, rflag);
-        memset(buf, 0, SIZE);
-        clearStruct(&request);
-
-        close(comm_fd);
-    }
 }
 
 //port is set to user-specified number or 80 by default
-int getPort (int argc, char *argv[]){
+int getPort (char argtwo[]){
     int port;
 
-    if((optind++) == (argc-1)){     //port number not specified
-        port = 80;
-    }else{                          //port number specified
-        port = atoi(argv[optind]);
+    if (argtwo != NULL){
+        port = atoi(argtwo);
 
-        if (port < 1024){           //invalid port number
+        if (port < 1024){
             exit(EXIT_FAILURE);
         }
+    }else{
+        port = 80;
     }
 
     return port;
@@ -599,94 +443,20 @@ int getPort (int argc, char *argv[]){
 
 int main (int argc, char *argv[]){
     (void)argc; //get rid of unused argc warning
-    int option, numworkers = 0;
-
-    //optind:          0            1           2        3  4    5
-    //max argc = 6:   ./httpserver  localhost   8080    -N  5   -r
-    //if argc > max args, we already know command is wrong
-    if(argc > 6){
-        printf("too many args!\n");
-        exit(EXIT_FAILURE);
-    }
-
-    bool rflag = false;
-    
-    //parse command for -N and -r
-    while((option = getopt(argc, argv, "N:r")) != -1){
-        if(option == 'r'){
-            rflag = true;
-
-        }else if(option == 'N'){     
-            numworkers = atoi(optarg);
-            if(numworkers == 0){ //https://piazza.com/class/kfqgk8ox2mi4a1?cid=267
-                printf("error: can't have 0 worker threads\n");
-                exit(EXIT_FAILURE);
-            }   
-
-        }else{
-            printf("error: bad flag\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    // LEAVE COMMENTED OUT: https://piazza.com/class/kfqgk8ox2mi4a1?cid=430
-    //if -r is present, make three different copies of all files in the server
-    // if(rflag == true){
-    //     DIR *d;
-    //     struct dirent *dir;
-    //     d = opendir(".");
-
-    //     //Loop through all files in the server directory
-    //     if(d){
-    //         while((dir = readdir(d)) != NULL){ 
-                
-    //             // printf("%s\n", dir->d_name);
-    //             // fflush(stdout);
-    //             //check if filename is valid
-    //             int source = open(dir->d_name, O_RDONLY); //open source to copy from
-    //             if(source == -1){
-    //                 perror("can't open source file");
-    //             }
-
-    //             //check if file is a directory
-    //             struct stat path_stat;
-    //             stat(dir->d_name, &path_stat);
-    //             int isfile = S_ISREG(path_stat.st_mode);
-    //             printf("isfile = %d\n", isfile);
-
-    //             //file is a directory, go to next file
-    //             if(isfile==0){
-    //                 continue;
-    //             }
-
-    //             copyFiles(dir->d_name, source, true);
-    //             close(source);
-    //         }  
-    //         closedir(d); 
-    //     }
-    // }
-
-    //if -N was not present, default is 4
-    if(numworkers == 0) numworkers = 4;
-
-    //get host address (e.g. localhost)
-    char* hostaddr = argv[optind];
-
-    //get port number
-    int port = getPort(argc, argv);
+    int port = getPort(argv[2]);
 
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
         
     server_addr.sin_family = AF_INET;   
-    inet_aton(hostaddr, &server_addr.sin_addr); //change this; cant use argv[1] anymore
+    inet_aton(argv[1], &server_addr.sin_addr); //get host address (e.g. localhost) (CHECK)
     server_addr.sin_port = htons(port);
     socklen_t addrlen = sizeof(server_addr);
 
     //create server socket file descriptor
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0){
-        perror("server_socket");
+        // perror("server_socket");
         exit(EXIT_FAILURE);
     }
 
@@ -711,45 +481,19 @@ int main (int argc, char *argv[]){
 
     struct sockaddr client_addr;
     socklen_t client_addrlen;
-
-    //create queue lock and new request signal
-    pthread_cond_t request = PTHREAD_COND_INITIALIZER;
-    pthread_mutex_t queueLock = PTHREAD_MUTEX_INITIALIZER;
-
-    struct requestLock sink;
-
-    sink.newReq = &request;
-    sink.queueLock = &queueLock;
-    sink.rflag = rflag;
-
-    // Create numworkers threads from pthread_t []
-    pthread_t *tid = new pthread_t[numworkers]; //NEW: check this - might need to delete[] tid somewhere
-    for(int i=0; i<numworkers; i++){
-        int tcreateerror = pthread_create(&(tid[i]), NULL, workerThread, (void*)(&sink));
-        if(tcreateerror != 0){
-            printf("\nThread %d cannot be created: [%s]", i, strerror(tcreateerror));
-            fflush(stdout);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    //at end of loop, we will have N worker threads that are sleeping
+    char buf[SIZE];
     
-    //dispatch thread
+    struct httpObject request;
+    struct flags flag;
+
     while(true){
-        printf("waiting for a connection\n");
-        fflush(stdout);
         //accept incoming connection
-        int comm_fd = accept(server_socket, &client_addr, &client_addrlen); //static
-        
-        //lock queue and push comm_fd into queue
-        pthread_mutex_lock(&queueLock);
-        commQ.push(comm_fd);
-        pthread_mutex_unlock(&queueLock);
-
-        //alert one thread in pool to handle connection here
-        pthread_cond_signal(&request);
+        int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
+        set_first_parse(&flag, true);
+        executeFunctions(comm_fd, &request, buf, &flag);
+        memset(buf, 0, SIZE);
+        clearStruct(&request);
+        close(comm_fd);
     }
-
     return EXIT_SUCCESS;
 }
