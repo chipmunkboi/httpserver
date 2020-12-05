@@ -162,12 +162,14 @@ bool valid_name (char* filename, struct flags* flag){
 void copyFiles(char* destination, int source){
     char buffer[SIZE];
 
-    printf("file to copy = %s\n", destination);
+    printf("file to copy into = %s\n", destination);
 
     int dest = open(destination, O_CREAT | O_RDWR | O_TRUNC);
 
     //copy content from source to dest
     while(read(source, buffer, 1) != 0){
+        // printf("buffer: %s\n", buffer);
+        // fflush(stdout);
         int check = write(dest, buffer, 1);
         if(check == -1){
             perror("writing in copyFiles()");
@@ -257,28 +259,30 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 //copy files from that backup folder to cwd
             //else
                 //request->status_code = 404;
-            char backup[100] = "./backup-";
+            char backup[50] = "./backup-";
             strcat(backup, request->filename);
-            //idk if appending / at end will mess with it
             strcat(backup, "/");
+
             DIR *d;
             struct dirent *dir;
             d = opendir(backup); 
             if(d){
                 while((dir = readdir(d)) != NULL){
                     //check if file is a directory
+                    char sourcePath[100];
+                    strcpy(sourcePath, backup);
+                    strcat(sourcePath, dir->d_name);
                     struct stat path_stat;
-                    stat(dir->d_name, &path_stat);
+                    stat(sourcePath, &path_stat);
                     int isfile = S_ISREG(path_stat.st_mode);
-                    printf("isfile = %d\n", isfile);
 
-                    //file is a directory, go to next file
+                    //file is a folder, go to next file
                     if(isfile == 0){
                         continue;
                     }
 
                     //check if filename is valid
-                    int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                    int source = open(sourcePath, O_RDONLY); //open source to copy from
                     if(source == -1){
                         perror("can't open source file");
                     }
@@ -294,10 +298,12 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     //------------------------------------------------------------------------------------------------------
 
                     char filepath[100];
+                    // memset(filepath, 0, 100);
                     strncpy(filepath, "./", 2);
                     strcat(filepath, dir->d_name);
 
                     printf("filepath: %s\n", filepath);
+                    fflush(stdout);
 
                     copyFiles(filepath, source);
                     close(source);
@@ -305,52 +311,145 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 closedir(d);
 
             }else{
-                printf("not d in flagR\n");
+                perror("d not a dir");
             }
 
         }else{ //recover timestamp not specified                          
             //determine which backup is the most recent one (bigger number = newer)
-    //         DIR *d;
-    //         struct dirent *dir;
-    //         d = opendir(".");
+            int newtime = 0;
+            char newest[50];
 
-    //         if(d){
-    //             while((dir = readdir(d)) != NULL){
-    //                 //check whether file is a directory
-    //                 struct stat path_stat;
-    //                 stat(dir->d_name, &path_stat);
-    //                 int isfile = S_ISREG(path_stat.st_mode);
-    //                 printf("isfile = %d\n", isfile);
+            DIR *d;
+            struct dirent *dird;
+            d = opendir(".");
+            
+            if(d){
+                while((dird = readdir(d)) != NULL){
+                    //check whether file is a directory
+                    struct stat path_stat;
+                    stat(dird->d_name, &path_stat);
+                    int isfile = S_ISREG(path_stat.st_mode);
 
-    //                 //file is not a directory, go to next file
-    //                 if(isfile == 1){ 
-    //                     continue;
-    //                 }
+                    //file is not a directory, go to next file
+                    if(isfile == 1){ 
+                        continue;
+                    }
 
-    //                 //look for folders starting with "backup-"
-    //                 if(strncmp(dir->d_name, "backup-", 7) == 0){
+                    //look for folders starting with "backup-"
+                    if(strncmp(dird->d_name, "backup-", 7) == 0){
+                        char folder[50];
+                        strncpy(folder, dird->d_name, strlen(dird->d_name));
+                        char* token = strtok(folder, "backup-");
+                        
+                        int timestamp = atoi(token);
+                        if(timestamp > newtime){   //if curr timestamp > newest timestamp
+                            newtime = timestamp;   //update newest timestamp
+                            memset(newest, 0, 50); //insurance
+                            strncpy(newest, dird->d_name, strlen(dird->d_name)); //update newest backup folder name
+                        }
 
-    //                     char* timestamp = strtok(dir->d_name, "backup-");
-
-    //                 }else{ //don't care about non backup folders
-    //                     continue;
-    //                 }
-
-    //                 //compare the times
-    //                 //keep the newest time stored as a var
-    //             }
+                    }else{ //don't care about non backup folders
+                        continue;
+                    }
+                }  
                 
-    //         }else{
-    //             perror("d not a dir");
-    //         }
-    //         //copy files from that backup folder to cwd
-    //     }
+            }else{
+                perror("d not a dir");
+            }
+
+            closedir(d);
+
+            
+            //copy files from that backup folder to cwd
+            char backup[50] = "./";
+            strcat(backup, newest);
+            strcat(backup, "/"); 
+
+            DIR *b;
+            struct dirent *dirb;
+            b = opendir(backup);
+
+            if(b){
+                while((dirb = readdir(b)) != NULL){
+                    //check if file is a directory
+                    char sourcePath[100];
+                    strcpy(sourcePath, backup);
+                    strcat(sourcePath, dirb->d_name);
+                    struct stat path_stat;
+                    stat(sourcePath, &path_stat);
+                    int isfile = S_ISREG(path_stat.st_mode);
+
+                    //file is a folder, go to next file
+                    if(isfile == 0){
+                        continue;
+                    }
+
+                     //check if filename is valid
+                    int source = open(sourcePath, O_RDONLY); //open source to copy from
+                    if(source == -1){
+                        perror("can't open source file");
+                    }
+
+                    //take out later: don't want to accidentally corrupt our working file until everything works correctly
+                    if(strcmp(dirb->d_name, "httpserver.cpp") == 0){
+                        continue;
+                    }
+
+                    if(strcmp(dirb->d_name, "Makefile") == 0){
+                        continue;
+                    }
+                    //------------------------------------------------------------------------------------------------------
+
+                    char filepath[100];
+                    memset(filepath, 0, 100);
+                    strncpy(filepath, "./", 2);
+                    strcat(filepath, dirb->d_name);
+
+                    copyFiles(filepath, source);
+                    close(source);
+                }
+                closedir(b);
+            
+            }else{
+                perror("b not a dir");
+            }
+        }
         
-    // }else if(flag->fileL){
-    //     //look through directory and return timestamps of backups
-    // }
+    }else if(flag->fileL){
+        //look through directory and return timestamps of backups
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(".");
+        char newLine[2] = "\n";
+        //Loop through all things in the server directory
+        if(d){
+            while((dir = readdir(d)) != NULL){ 
+
+                //check if file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                printf("isfile = %d\n", isfile);
+
+                //file is not a directory, go to next file
+                if(isfile!=0){
+                    continue;
+                }
+                //it is a directory
+                while(send(comm_fd, dir->d_name, 1, 0) != 0){
+                }
+                
+                send(comm_fd, newLine, 2, 0);
+            }  
+            closedir(d); 
+        }
+    }
+    
     //construct response; no need to do rest of GET
     //close the file
+
+    printf("done with all special requests\n");
+    fflush(stdout);
 
     file = open(request->filename, O_RDONLY);
 
