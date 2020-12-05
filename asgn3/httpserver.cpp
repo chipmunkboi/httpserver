@@ -63,6 +63,9 @@ void clearFlags(struct flags* flag){
     flag->exists = false;
     flag->first_parse = true;
     flag->good_name = false;
+    flag->fileB = false;
+    flag->fileR = false;
+    flag->fileL = false;
 }
 
 const char* getCode (int status_code){
@@ -427,6 +430,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
        
         //Loop through all things in the server directory
         if(d){
+            
             while((dir = readdir(d)) != NULL){ 
                 //if not backup continue
                 if(strncmp(dir->d_name, "backup", 6) != 0){
@@ -449,13 +453,17 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 strcpy(copy, dir->d_name);
                 char* timestamp = strtok(copy, "backup-");
 
-                send(comm_fd, timestamp, 20, 0);
-                send(comm_fd, newLine, 2, 0);
-            }  
+                int send1 = send(comm_fd, timestamp, 20, 0);
+                if(send1 == -1) perror("send1");
+                int send2 = send(comm_fd, newLine, 2, 0);
+                if(send2 == -1) perror("send2");
+                
+            fflush(stdout);
+            }
+
             closedir(d);
             return; 
         }
-        //return here
     }
     //construct response & return: no need to do rest of GET
     if(flag->fileB || flag->fileR){
@@ -673,6 +681,8 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         put_request(comm_fd, request, buf, flag);
     }else if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, flag, buf);
+        printf("done with GET\n");
+        fflush(stdout);
     }
     else{
         request->status_code = 500;
@@ -744,6 +754,9 @@ int main (int argc, char *argv[]){
 
     while(true){
         //accept incoming connection
+        printf("waiting for a connection...\n");
+        fflush(stdout);
+
         int comm_fd = accept(server_socket, &client_addr, &client_addrlen);
         set_first_parse(&flag, true);
         executeFunctions(comm_fd, &request, buf, &flag);
