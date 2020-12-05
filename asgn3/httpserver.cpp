@@ -421,7 +421,10 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         struct dirent *dir;
         d = opendir(".");
         char newLine[2] = "\n";
-        //send response here
+        
+        request->status_code = 200;
+        construct_response(comm_fd, request);
+       
         //Loop through all things in the server directory
         if(d){
             while((dir = readdir(d)) != NULL){ 
@@ -449,19 +452,18 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 send(comm_fd, timestamp, 20, 0);
                 send(comm_fd, newLine, 2, 0);
             }  
-            closedir(d); 
+            closedir(d);
+            return; 
         }
         //return here
     }
-    //construct response; no need to do rest of GET
+    //construct response & return: no need to do rest of GET
     if(flag->fileB || flag->fileR){
         request->status_code = 200;
         construct_response(comm_fd, request);
+        return;
     }
 
-    printf("done with all special requests\n");
-    fflush(stdout);
-    
     int file;
     file = open(request->filename, O_RDONLY);
 
