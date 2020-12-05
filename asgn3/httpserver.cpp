@@ -183,7 +183,7 @@ void copyFiles(char* destination, int source){
 
 void get_request (int comm_fd, struct httpObject* request, struct flags* flag, char* buf){
     memset(buf, 0, SIZE);
-    int file, folder;
+    
 
     //special request files are assumed not to exist, so no point in trying to open() them
     if(flag->fileB){
@@ -198,7 +198,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         printf("backup = %s\n", backup);
    
         //create new folder
-        folder = mkdir(backup, 0777);
+        int folder = mkdir(backup, 0777);
         if(folder == -1) perror("mkdir");
 
         strcat(backup, "/"); //makes it easier to strcat filenames to the end later
@@ -421,36 +421,48 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         struct dirent *dir;
         d = opendir(".");
         char newLine[2] = "\n";
+        //send response here
         //Loop through all things in the server directory
         if(d){
             while((dir = readdir(d)) != NULL){ 
+                //if not backup continue
+                if(strncmp(dir->d_name, "backup", 6) != 0){
+                    continue;
+                }
 
                 //check if file is a directory
                 struct stat path_stat;
                 stat(dir->d_name, &path_stat);
                 int isfile = S_ISREG(path_stat.st_mode);
-                printf("isfile = %d\n", isfile);
+                // printf("isfile = %d\n", isfile);
 
                 //file is not a directory, go to next file
                 if(isfile!=0){
                     continue;
                 }
-                //it is a directory
-                while(send(comm_fd, dir->d_name, 1, 0) != 0){
-                }
-                
+
+                //it is a directory named "backup-..."
+                char copy[50];
+                strcpy(copy, dir->d_name);
+                char* timestamp = strtok(copy, "backup-");
+
+                send(comm_fd, timestamp, 20, 0);
                 send(comm_fd, newLine, 2, 0);
             }  
             closedir(d); 
         }
+        //return here
     }
-    
     //construct response; no need to do rest of GET
-    //close the file
+    if(flag->fileB || flag->fileR){
+        request->status_code = 200;
+        construct_response(comm_fd, request);
+    }
 
     printf("done with all special requests\n");
     fflush(stdout);
-
+    
+    int file;
     file = open(request->filename, O_RDONLY);
 
     if (file == -1){
