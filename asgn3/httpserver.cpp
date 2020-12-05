@@ -2,8 +2,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <netdb.h>
-#include <stdlib.h>
 
+#include <string>       //c++ strings
 #include <string.h>     //memset
 #include <stdlib.h>     //atoi
 #include <unistd.h>     //write
@@ -11,11 +11,14 @@
 #include <ctype.h>      //isalnum
 #include <errno.h>      
 #include <err.h>
+#include <time.h>       //time
+#include <dirent.h>     //for parsing directory
 
 #include <netinet/in.h> //inet_aton
 #include <arpa/inet.h>  //inet_aton
 
 #include <stdio.h>      //printf, perror
+#include <iostream>     //cout
 
 #define SIZE 4096       //4 KB
 
@@ -150,16 +153,85 @@ bool valid_name (char* filename, struct flags* flag){
     return true;
 }
 
-void get_request (int comm_fd, struct httpObject* request, char* buf){
-    memset(buf, 0, SIZE);
-    
-    //special request files are assumed not to exist, so no point in trying to open() them
-    if(fileB){
-        //create name for folder (append timestamp to "./backup-")
-        //create new folder
-        //copy files from cwd to new folder
+// void copyFiles(char* filename, int source){
+//     char buffer[SIZE];
 
-    }else if(fileR){
+//     printf("file to copy = %s\n", source);
+//     exit(1);
+
+//     int dest = open(filename, O_CREAT | O_RDWR | O_TRUNC);
+
+//     //copy content from source to dest
+//     while(read(source, buffer, 1) != 0){
+//         int check = write(dest, buffer, 1);
+//         if(check == -1) perror("writing in copyFiles()");
+//     }
+
+//     //close files
+//     close(dest);
+// }
+
+void get_request (int comm_fd, struct httpObject* request, struct flags* flag, char* buf){
+    memset(buf, 0, SIZE);
+    int file;
+
+    //special request files are assumed not to exist, so no point in trying to open() them
+    if(flag->fileB){
+        //create name for folder (append timestamp to "./backup-")
+        time_t t = time(NULL);
+
+        //--------------------------------------------------
+        // std::string timestamp1 = std::to_string((__uintmax_t)t);
+        // std::string backup1 = "./backup-";
+        // backup1.append(timestamp1);
+        // std::cout << "backup = " << backup1 <<'\n';
+        //--------------------------------------------------
+
+        char timestamp[20];
+        snprintf(timestamp, 20, "%d", t);
+        char backup[30] = "./backup-";
+        strcat(backup, timestamp);
+
+        printf("backup = %s\n", backup);
+   
+        //create new folder
+        file = open(backup, O_CREAT | O_RDWR | O_TRUNC);
+        if(file == -1){perror("get req open");}
+
+        //copy files from cwd to new folder
+        // DIR *d;
+        // struct dirent *dir;
+        // d = opendir(".");
+
+        // if(d){
+        //     while((dir = readdir(d)) != NULL){
+        //         printf("%s\n", dir->d_name);
+        //         fflush(stdout);
+
+        //         //check if filename is valid
+        //         int source = open(dir->d_name, O_RDONLY); //open source to copy from
+        //         if(source == -1){
+        //             perror("can't open source file");
+        //         }
+
+        //         //check if file is a directory
+        //         struct stat path_stat;
+        //         stat(dir->d_name, &path_stat);
+        //         int isfile = S_ISREG(path_stat.st_mode);
+        //         printf("isfile = %d\n", isfile);
+
+        //         //file is a directory, go to next file
+        //         if(isfile == 0){
+        //             continue;
+        //         }
+
+        //         copyFiles(dir->d_name, source);
+        //         close(source);
+        //     }
+        //     closedir(d);
+        // }
+
+    }else if(flag->fileR){
         if(strlen(request->filename) == 1){ //recover timestamp not specified
             //determine which backup is the most recent one
             //copy files from that backup folder to cwd
@@ -172,13 +244,13 @@ void get_request (int comm_fd, struct httpObject* request, char* buf){
                 //request->status_code = 404;
         }
         
-    }else if(fileL){
+    }else if(flag->fileL){
         //look through directory and return timestamps of backups
     }
     //construct response; no need to do rest of GET
     //close the file
 
-    int file = open(request->filename, O_RDONLY);
+    file = open(request->filename, O_RDONLY);
 
     if (file == -1){
         if(errno==ENOENT){ 
@@ -416,7 +488,7 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
     if(strcmp(request->type, "PUT") == 0){ //body is present, read message body
         put_request(comm_fd, request, buf, flag);
     }else if(strcmp(request->type, "GET") == 0){
-        get_request(comm_fd, request, buf);
+        get_request(comm_fd, request, flag, buf);
     }
     else{
         request->status_code = 500;
