@@ -126,6 +126,12 @@ bool valid_name (char* filename, struct flags* flag){
             return true;
 
         }else if(strncmp(filename, "r", 1) == 0){ //might not be just "r" (i.e. r/[timestamp])
+            memmove(filename, filename+1, strlen(filename));
+
+            if(filename[0] == '/'){
+                memmove(filename, filename+1, strlen(filename));
+            }
+
             flag->good_name = true;
             flag->fileR = true;
             return true;
@@ -153,100 +159,196 @@ bool valid_name (char* filename, struct flags* flag){
     return true;
 }
 
-// void copyFiles(char* filename, int source){
-//     char buffer[SIZE];
+void copyFiles(char* destination, int source){
+    char buffer[SIZE];
 
-//     printf("file to copy = %s\n", source);
-//     exit(1);
+    printf("file to copy = %s\n", destination);
 
-//     int dest = open(filename, O_CREAT | O_RDWR | O_TRUNC);
+    int dest = open(destination, O_CREAT | O_RDWR | O_TRUNC);
 
-//     //copy content from source to dest
-//     while(read(source, buffer, 1) != 0){
-//         int check = write(dest, buffer, 1);
-//         if(check == -1) perror("writing in copyFiles()");
-//     }
+    //copy content from source to dest
+    while(read(source, buffer, 1) != 0){
+        int check = write(dest, buffer, 1);
+        if(check == -1){
+            perror("writing in copyFiles()");
+            break;
+        } 
+    }
 
-//     //close files
-//     close(dest);
-// }
+    //close files
+    close(dest);
+}
 
 void get_request (int comm_fd, struct httpObject* request, struct flags* flag, char* buf){
     memset(buf, 0, SIZE);
-    int file;
+    int file, folder;
 
     //special request files are assumed not to exist, so no point in trying to open() them
     if(flag->fileB){
         //create name for folder (append timestamp to "./backup-")
         time_t t = time(NULL);
 
-        //--------------------------------------------------
-        // std::string timestamp1 = std::to_string((__uintmax_t)t);
-        // std::string backup1 = "./backup-";
-        // backup1.append(timestamp1);
-        // std::cout << "backup = " << backup1 <<'\n';
-        //--------------------------------------------------
-
         char timestamp[20];
-        snprintf(timestamp, 20, "%d", t);
+        snprintf(timestamp, 20, "%ld", t);
         char backup[30] = "./backup-";
         strcat(backup, timestamp);
 
         printf("backup = %s\n", backup);
    
         //create new folder
-        file = open(backup, O_CREAT | O_RDWR | O_TRUNC);
-        if(file == -1){perror("get req open");}
+        folder = mkdir(backup, 0777);
+        if(folder == -1) perror("mkdir");
+
+        strcat(backup, "/"); //makes it easier to strcat filenames to the end later
 
         //copy files from cwd to new folder
-        // DIR *d;
-        // struct dirent *dir;
-        // d = opendir(".");
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(".");
 
-        // if(d){
-        //     while((dir = readdir(d)) != NULL){
-        //         printf("%s\n", dir->d_name);
-        //         fflush(stdout);
+        if(d){
+            while((dir = readdir(d)) != NULL){
+                //check whether file is a directory
+                struct stat path_stat;
+                stat(dir->d_name, &path_stat);
+                int isfile = S_ISREG(path_stat.st_mode);
+                printf("isfile = %d\n", isfile);
 
-        //         //check if filename is valid
-        //         int source = open(dir->d_name, O_RDONLY); //open source to copy from
-        //         if(source == -1){
-        //             perror("can't open source file");
-        //         }
+                //file is not a folder, go to next file
+                if(isfile == 0){
+                    continue;
+                }
 
-        //         //check if file is a directory
-        //         struct stat path_stat;
-        //         stat(dir->d_name, &path_stat);
-        //         int isfile = S_ISREG(path_stat.st_mode);
-        //         printf("isfile = %d\n", isfile);
+                //check if filename is valid
+                int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                if(source == -1){
+                    perror("can't open source file");
+                }
 
-        //         //file is a directory, go to next file
-        //         if(isfile == 0){
-        //             continue;
-        //         }
+                // //take out later: don't want to accidentally corrupt our working file until everything works correctly
+                // if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                //     continue;
+                // }
 
-        //         copyFiles(dir->d_name, source);
-        //         close(source);
-        //     }
-        //     closedir(d);
-        // }
+                // if(strcmp(dir->d_name, "Makefile") == 0){
+                //     continue;
+                // }
+                // //------------------------------------------------------------------------------------------------------
+
+                char filepath[100];
+                strncpy(filepath, backup, 21);
+                strcat(filepath, dir->d_name);
+
+                printf("filepath: %s\n", filepath);
+
+                copyFiles(filepath, source);
+                close(source);
+            }
+            closedir(d);
+
+        }else{
+                perror("d not a dir");
+        }
 
     }else if(flag->fileR){
-        if(strlen(request->filename) == 1){ //recover timestamp not specified
-            //determine which backup is the most recent one
-            //copy files from that backup folder to cwd
-
-        }else{                              //recovery timestamp specified
+        if(strlen(request->filename) != 0){ //recovery timestamp specified
             //look through all backup folders to find the specified timestamp
             //if found
                 //copy files from that backup folder to cwd
             //else
                 //request->status_code = 404;
-        }
+            char backup[100] = "./backup-";
+            strcat(backup, request->filename);
+            //idk if appending / at end will mess with it
+            strcat(backup, "/");
+            DIR *d;
+            struct dirent *dir;
+            d = opendir(backup); 
+            if(d){
+                while((dir = readdir(d)) != NULL){
+                    //check if file is a directory
+                    struct stat path_stat;
+                    stat(dir->d_name, &path_stat);
+                    int isfile = S_ISREG(path_stat.st_mode);
+                    printf("isfile = %d\n", isfile);
+
+                    //file is a directory, go to next file
+                    if(isfile == 0){
+                        continue;
+                    }
+
+                    //check if filename is valid
+                    int source = open(dir->d_name, O_RDONLY); //open source to copy from
+                    if(source == -1){
+                        perror("can't open source file");
+                    }
+                    
+                    //take out later: don't want to accidentally corrupt our working file until everything works correctly
+                    if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                        continue;
+                    }
+
+                    if(strcmp(dir->d_name, "Makefile") == 0){
+                        continue;
+                    }
+                    //------------------------------------------------------------------------------------------------------
+
+                    char filepath[100];
+                    strncpy(filepath, "./", 2);
+                    strcat(filepath, dir->d_name);
+
+                    printf("filepath: %s\n", filepath);
+
+                    copyFiles(filepath, source);
+                    close(source);
+                }
+                closedir(d);
+
+            }else{
+                printf("not d in flagR\n");
+            }
+
+        }else{ //recover timestamp not specified                          
+            //determine which backup is the most recent one (bigger number = newer)
+    //         DIR *d;
+    //         struct dirent *dir;
+    //         d = opendir(".");
+
+    //         if(d){
+    //             while((dir = readdir(d)) != NULL){
+    //                 //check whether file is a directory
+    //                 struct stat path_stat;
+    //                 stat(dir->d_name, &path_stat);
+    //                 int isfile = S_ISREG(path_stat.st_mode);
+    //                 printf("isfile = %d\n", isfile);
+
+    //                 //file is not a directory, go to next file
+    //                 if(isfile == 1){ 
+    //                     continue;
+    //                 }
+
+    //                 //look for folders starting with "backup-"
+    //                 if(strncmp(dir->d_name, "backup-", 7) == 0){
+
+    //                     char* timestamp = strtok(dir->d_name, "backup-");
+
+    //                 }else{ //don't care about non backup folders
+    //                     continue;
+    //                 }
+
+    //                 //compare the times
+    //                 //keep the newest time stored as a var
+    //             }
+                
+    //         }else{
+    //             perror("d not a dir");
+    //         }
+    //         //copy files from that backup folder to cwd
+    //     }
         
-    }else if(flag->fileL){
-        //look through directory and return timestamps of backups
-    }
+    // }else if(flag->fileL){
+    //     //look through directory and return timestamps of backups
+    // }
     //construct response; no need to do rest of GET
     //close the file
 
@@ -390,37 +492,6 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
 void set_first_parse (struct flags* flag, bool value){
     flag->first_parse = value;
-}
-
-void parse_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
-    if(flag->first_parse){
-        sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
-
-        //check that httpversion is "HTTP/1.1"
-        if(strcmp(request->httpversion, "HTTP/1.1") != 0){
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-            // return;
-        
-        //check that filename is made of 10 ASCII characters
-        }else if(!valid_name(request->filename, flag)){
-            request->status_code = 400;
-            construct_response(comm_fd, request);
-            // return;
-        }
-
-        set_first_parse(flag, false);
-    }
-
-    char* token = strtok(buf, "\r\n");
-    while(token){
-        if(strncmp(token, "Content-Length:", 15) == 0){
-            sscanf(token, "%*s %ld", &request->content_length);
-        }else if(strncmp(token, "\r\n", 2)==0){
-            break;
-        }
-        token = strtok(NULL, "\r\n");
-    }
 }
 
 void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
