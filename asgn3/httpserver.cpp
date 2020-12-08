@@ -368,17 +368,21 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     //------------------------------------------------------------------------------------------------------
 
                     char filepath[100];
-                    // memset(filepath, 0, 100);
+                    memset(filepath, 0, 100); //commented back in to fix the appending error
                     strncpy(filepath, "./", 2);
                     strcat(filepath, dir->d_name);
-
+                    printf("filepath is %s\n", filepath);
                     copyFiles(filepath, source);
                     close(source);
                 }
                 closedir(d);
 
             }else{
+                //invalid d
                 perror("d not a dir");
+                request->status_code = 404;
+                construct_response(comm_fd, request);
+                return;
             }
 
         }else{ //recover timestamp not specified                          
