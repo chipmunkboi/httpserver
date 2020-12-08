@@ -189,15 +189,12 @@ bool valid_name (char* filename, struct flags* flag){
             return true;
 
         }else if(strncmp(filename, "r", 1) == 0){ //might not be just "r" (i.e. r/[timestamp])
-            memmove(filename, filename+1, strlen(filename));
-
-            if(filename[0] == '/'){
-                memmove(filename, filename+1, strlen(filename));
-            }
-
-            flag->good_name = true;
-            flag->fileR = true;
-            return true;
+            if(filename[1] == '/'){ //this is safer since we don't remove anything until we are for sure it's "r/" and not a reg file starting with an r
+                memmove(filename, filename+2, strlen(filename)); //remove "r/"
+                flag->good_name = true;
+                flag->fileR = true;
+                return true;
+            }           
 
         }else if((strlen(filename) == 1) && (strncmp(filename, "l", 1) == 0)){
             flag->good_name = true;
