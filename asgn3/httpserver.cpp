@@ -32,15 +32,6 @@ struct httpObject {
     ssize_t content_length; //length of file
 };
 
-struct flags {
-    bool exists;            //flag for whether file already exists
-    bool first_parse;       //flag for parsing first line of header
-    bool good_name;         //flag for whether name is valid
-    bool fileB;
-    bool fileR;
-    bool fileL;
-};
-
 //used to check that all parts of struct are correct
 void printStruct(struct httpObject* request){
     printf("type: %s\n", request->type);
@@ -59,6 +50,15 @@ void clearStruct(struct httpObject* request){
     request->content_length = 0;
 }
 
+struct flags {
+    bool exists;            //flag for whether file already exists
+    bool first_parse;       //flag for parsing first line of header
+    bool good_name;         //flag for whether name is valid
+    bool fileB;
+    bool fileR;
+    bool fileL;
+};
+
 void clearFlags(struct flags* flag){
     flag->exists = false;
     flag->first_parse = true;
@@ -66,6 +66,64 @@ void clearFlags(struct flags* flag){
     flag->fileB = false;
     flag->fileR = false;
     flag->fileL = false;
+}
+
+struct LinkedList{
+    int data;
+    struct LinkedList* next;
+};
+
+void append(struct LinkedList** head, int newData){
+    struct LinkedList* newNode = (struct LinkedList*)malloc(sizeof(struct LinkedList)); //alloc new node
+    struct LinkedList* last = *head; //point *last to head of list
+
+    newNode->data = newData; //put in data
+    newNode->next = NULL; //newNode will be tail, so next == NULL
+    
+    //if list is empty, newNode is head
+    if(*head == NULL){
+        *head = newNode;
+        return;
+    }
+
+    //traverse list until last node is found
+    while(last->next != NULL){
+        last = last->next;
+    }
+
+    last->next = newNode; //update last
+    return;
+}
+
+void sendList(int comm_fd, struct LinkedList* node){
+    // char newLine[2] = "\n";
+    while(node != NULL){
+        char str[25];
+        sprintf(str, "%d", node->data);
+        strcat(str, "\n");
+        send(comm_fd, str, strlen(str), 0);
+        node = node->next;
+    }
+}
+
+void clearList(struct LinkedList** head){
+    struct LinkedList* curr = *head;
+    struct LinkedList* next;
+
+    while(curr != NULL){
+        next = curr->next;
+        free(curr);
+        curr = next;
+    }
+
+    *head = NULL;
+}
+
+void printList(struct LinkedList* node){
+    while(node != NULL){
+        printf(" %d ", node->data);
+        node = node->next;
+    }
 }
 
 const char* getCode (int status_code){
@@ -230,15 +288,23 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     perror("can't open source file");
                 }
 
-                // //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                // if(strcmp(dir->d_name, "httpserver.cpp") == 0){
-                //     continue;
-                // }
+                //take out later: don't want to accidentally corrupt our working file until everything works correctly
+                if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                    continue;
+                }
 
-                // if(strcmp(dir->d_name, "Makefile") == 0){
-                //     continue;
-                // }
-                // //------------------------------------------------------------------------------------------------------
+                if(strcmp(dir->d_name, "httpserver.o") == 0){
+                    continue;
+                }
+
+                if(strcmp(dir->d_name, "httpserver") == 0){
+                    continue;
+                }
+
+                if(strcmp(dir->d_name, "Makefile") == 0){
+                    continue;
+                }
+                //------------------------------------------------------------------------------------------------------
 
                 char filepath[100];
                 strncpy(filepath, backup, 21);
@@ -257,11 +323,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
 
     }else if(flag->fileR){
         if(strlen(request->filename) != 0){ //recovery timestamp specified
-            //look through all backup folders to find the specified timestamp
-            //if found
-                //copy files from that backup folder to cwd
-            //else
-                //request->status_code = 404;
             char backup[50] = "./backup-";
             strcat(backup, request->filename);
             strcat(backup, "/");
@@ -287,11 +348,27 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     //check if filename is valid
                     int source = open(sourcePath, O_RDONLY); //open source to copy from
                     if(source == -1){
-                        perror("can't open source file");
+                        // perror("can't open source file");
+                        if(errno == ENOENT){ //no such file or dir
+                            request->status_code = 404;
+                            construct_response(comm_fd, request);
+
+                        }else{
+                            request->status_code = 500;
+                            construct_response(comm_fd, request);
+                        }
                     }
                     
                     //take out later: don't want to accidentally corrupt our working file until everything works correctly
                     if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                    continue;
+                    }
+
+                    if(strcmp(dir->d_name, "httpserver.o") == 0){
+                        continue;
+                    }
+
+                    if(strcmp(dir->d_name, "httpserver") == 0){
                         continue;
                     }
 
@@ -361,7 +438,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
             }
 
             closedir(d);
-
             
             //copy files from that backup folder to cwd
             char backup[50] = "./";
@@ -387,18 +463,26 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                         continue;
                     }
 
-                     //check if filename is valid
+                    //check if filename is valid
                     int source = open(sourcePath, O_RDONLY); //open source to copy from
                     if(source == -1){
                         perror("can't open source file");
                     }
 
                     //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                    if(strcmp(dirb->d_name, "httpserver.cpp") == 0){
+                    if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                    continue;
+                    }
+
+                    if(strcmp(dir->d_name, "httpserver.o") == 0){
                         continue;
                     }
 
-                    if(strcmp(dirb->d_name, "Makefile") == 0){
+                    if(strcmp(dir->d_name, "httpserver") == 0){
+                        continue;
+                    }
+
+                    if(strcmp(dir->d_name, "Makefile") == 0){
                         continue;
                     }
                     //------------------------------------------------------------------------------------------------------
@@ -423,16 +507,16 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         DIR *d;
         struct dirent *dir;
         d = opendir(".");
-        char newLine[2] = "\n";
         
         request->status_code = 200;
-        construct_response(comm_fd, request);
        
+        int contentLength = 0;
+        struct LinkedList* list = NULL; //new, empty list
+
         //Loop through all things in the server directory
         if(d){
-            
             while((dir = readdir(d)) != NULL){ 
-                //if not backup continue
+                //if not backup file, continue
                 if(strncmp(dir->d_name, "backup", 6) != 0){
                     continue;
                 }
@@ -452,22 +536,35 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 char copy[50];
                 strcpy(copy, dir->d_name);
                 char* timestamp = strtok(copy, "backup-");
+                contentLength += (strlen(timestamp) + 1); //+1 is for "\n"
 
-                int send1 = send(comm_fd, timestamp, 20, 0);
-                if(send1 == -1) perror("send1");
-                int send2 = send(comm_fd, newLine, 2, 0);
-                if(send2 == -1) perror("send2");
-                
-            fflush(stdout);
+                append(&list, atoi(timestamp)); //append timestamp to list
             }
+
+            // printf("LINKED LIST:\n");
+            // printList(list);
+            // printf("\n");
+
+            request->content_length = contentLength;
+            construct_response(comm_fd, request);
+
+            sendList(comm_fd, list);
+            clearList(&list); //dealloc list
 
             closedir(d);
             return; 
         }
     }
+
     //construct response & return: no need to do rest of GET
-    if(flag->fileB || flag->fileR){
+    if(flag->fileR){
         request->status_code = 200;
+        construct_response(comm_fd, request);
+        return;
+    }
+
+    if(flag->fileB){
+        request->status_code = 201;
         construct_response(comm_fd, request);
         return;
     }
@@ -501,7 +598,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
 }
 
 void put_request (int comm_fd, struct httpObject* request, char* buf, struct flags* flag){
-    int wfile;      //to check if write() is successful/how many bytes got written
+    int wfile; //to check if write() is successful/how many bytes got written
     int check;
 
     //check whether file already exists
@@ -762,6 +859,7 @@ int main (int argc, char *argv[]){
         executeFunctions(comm_fd, &request, buf, &flag);
         memset(buf, 0, SIZE);
         clearStruct(&request);
+        clearFlags(&flag);
         close(comm_fd);
     }
     return EXIT_SUCCESS;
