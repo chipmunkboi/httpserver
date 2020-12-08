@@ -12,3 +12,6 @@ clean :
 
 spotless :
 	$(REMOVE) $(OBJECTS) httpserver
+
+memcheck :
+	valgrind --tool=memcheck --leak-check=yes ./httpserver
