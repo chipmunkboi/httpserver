@@ -203,6 +203,13 @@ bool valid_name (char* filename, struct flags* flag){
                 flag->good_name = true;
                 flag->fileR = true;
                 return true;
+            }
+            else if(strlen(filename) == 1){//only r 
+                memmove(filename, filename+1, strlen(filename)); //remove "r" so filename should be empty
+                printf("filename is %s\n", filename);
+                flag->good_name = true;
+                flag->fileR = true;
+                return true;
             }           
 
         }else if((strlen(filename) == 1) && (strncmp(filename, "l", 1) == 0)){
@@ -247,7 +254,7 @@ void copyFiles(char* destination, int source){
 
 void get_request (int comm_fd, struct httpObject* request, struct flags* flag, char* buf){
     memset(buf, 0, SIZE);
-    
+
     //special request files are assumed not to exist, so no point in trying to open() them
     if(flag->fileB){
         //create name for folder (append timestamp to "./backup-")
@@ -688,12 +695,14 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
 
     sscanf(buf, "%s %s %s", request->type, request->filename, request->httpversion);
 
-    if(bytes_recv == -1) request->status_code = 500;
-    //If get req is 500 no need to execute to completion
-    if(strcmp(request->type, "GET") == 0){
-        construct_response(comm_fd, request);
-        return;
-    }
+    if(bytes_recv == -1){
+        request->status_code = 500;
+        //If get req is 500 no need to execute to completion
+        if(strcmp(request->type, "GET") == 0){
+            construct_response(comm_fd, request);
+            return;
+        }
+    } 
 
     //check that httpversion is "HTTP/1.1"
     if(strcmp(request->httpversion, "HTTP/1.1") != 0){
