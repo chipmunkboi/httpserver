@@ -165,14 +165,14 @@ void construct_response (int comm_fd, struct httpObject* request){
     send(comm_fd, response, strlen(response), 0);
 }
 
-void syscallError(int fd, struct httpObject* request){
-    if(fd == -1){
-        request->status_code = 500;
-        // printf("errno %d: %s\n", errno, strerror(errno));
-        // fflush(stdout);
-        construct_response(fd, request);
-    }
-}
+// void syscallError(int fd, struct httpObject* request){
+//     if(fd == -1){
+//         request->status_code = 500;
+//         // printf("errno %d: %s\n", errno, strerror(errno));
+//         // fflush(stdout);
+//         construct_response(fd, request);
+//     }
+// }
 
 //returns TRUE if name is valid and FALSE if name is invalid
 bool valid_name (char* filename, struct flags* flag){
@@ -248,7 +248,6 @@ void copyFiles(char* destination, int source){
 void get_request (int comm_fd, struct httpObject* request, struct flags* flag, char* buf){
     memset(buf, 0, SIZE);
     
-
     //special request files are assumed not to exist, so no point in trying to open() them
     if(flag->fileB){
         //create name for folder (append timestamp to "./backup-")
@@ -310,7 +309,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
             closedir(d);
 
         }else{
-                perror("d not a dir");
+            perror("d not a dir");
         }
 
     }else if(flag->fileR){
@@ -592,7 +591,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
                 bytes_recv = recv(comm_fd, buf, SIZE, 0);                       //recv SIZE bytes of body
             }
 
-            if((request->status_code != 400) || (request->status_code != 500)){                                    //if bad request, don't write 
+            if((request->status_code != 400) || (request->status_code != 500)){ //if bad request, don't write 
                 wfile = write(file, buf, bytes_recv);
                 if(wfile == -1) request->status_code = 500;
             }
@@ -608,7 +607,7 @@ void put_request (int comm_fd, struct httpObject* request, char* buf, struct fla
 
     //at least part of body was in buf, need to write() before checking whether we need to recv() again
     }else if((request->content_length != 0) && (strlen(request->body) != 0)){            
-        if((request->status_code != 400) || (request->status_code != 500)){                                        //write what was in buf already
+        if((request->status_code != 400) || (request->status_code != 500)){ //write what was in buf already
             wfile = write(file, request->body, strlen(request->body));
             if(wfile == -1) request->status_code = 500;
         }
