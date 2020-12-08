@@ -96,7 +96,6 @@ void append(struct LinkedList** head, int newData){
 }
 
 void sendList(int comm_fd, struct LinkedList* node){
-    // char newLine[2] = "\n";
     while(node != NULL){
         char str[25];
         sprintf(str, "%d", node->data);
@@ -119,9 +118,12 @@ void clearList(struct LinkedList** head){
     *head = NULL;
 }
 
+//prints out linked list in this format: data1->data2->data3...
 void printList(struct LinkedList* node){
     while(node != NULL){
-        printf(" %d ", node->data);
+        printf("%d", node->data);
+        if(node->next != NULL) printf("->");
+
         node = node->next;
     }
 }
@@ -222,15 +224,10 @@ bool valid_name (char* filename, struct flags* flag){
 
 void copyFiles(char* destination, int source){
     char buffer[SIZE];
-
-    printf("file to copy into = %s\n", destination);
-
     int dest = open(destination, O_CREAT | O_RDWR | O_TRUNC);
 
     //copy content from source to dest
     while(read(source, buffer, 1) != 0){
-        // printf("buffer: %s\n", buffer);
-        // fflush(stdout);
         int check = write(dest, buffer, 1);
         if(check == -1){
             perror("writing in copyFiles()");
@@ -256,7 +253,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         char backup[30] = "./backup-";
         strcat(backup, timestamp);
 
-        printf("backup = %s\n", backup);
    
         //create new folder
         int folder = mkdir(backup, 0777);
@@ -275,7 +271,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 struct stat path_stat;
                 stat(dir->d_name, &path_stat);
                 int isfile = S_ISREG(path_stat.st_mode);
-                printf("isfile = %d\n", isfile);
 
                 //file is not a folder, go to next file
                 if(isfile == 0){
@@ -285,7 +280,8 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 //check if filename is valid
                 int source = open(dir->d_name, O_RDONLY); //open source to copy from
                 if(source == -1){
-                    perror("can't open source file");
+                    // perror("can't open source file");
+                    continue; //skip backing up forbidden files: https://piazza.com/class/kfqgk8ox2mi4a1?cid=471
                 }
 
                 //take out later: don't want to accidentally corrupt our working file until everything works correctly
@@ -309,8 +305,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 char filepath[100];
                 strncpy(filepath, backup, 21);
                 strcat(filepath, dir->d_name);
-
-                printf("filepath: %s\n", filepath);
 
                 copyFiles(filepath, source);
                 close(source);
@@ -381,9 +375,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     // memset(filepath, 0, 100);
                     strncpy(filepath, "./", 2);
                     strcat(filepath, dir->d_name);
-
-                    printf("filepath: %s\n", filepath);
-                    fflush(stdout);
 
                     copyFiles(filepath, source);
                     close(source);
@@ -470,19 +461,19 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     }
 
                     //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                    if(strcmp(dir->d_name, "httpserver.cpp") == 0){
+                    if(strcmp(dirb->d_name, "httpserver.cpp") == 0){
                     continue;
                     }
 
-                    if(strcmp(dir->d_name, "httpserver.o") == 0){
+                    if(strcmp(dirb->d_name, "httpserver.o") == 0){
                         continue;
                     }
 
-                    if(strcmp(dir->d_name, "httpserver") == 0){
+                    if(strcmp(dirb->d_name, "httpserver") == 0){
                         continue;
                     }
 
-                    if(strcmp(dir->d_name, "Makefile") == 0){
+                    if(strcmp(dirb->d_name, "Makefile") == 0){
                         continue;
                     }
                     //------------------------------------------------------------------------------------------------------
@@ -503,7 +494,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         }
         
     }else if(flag->fileL){
-        //look through directory and return timestamps of backups
         DIR *d;
         struct dirent *dir;
         d = opendir(".");
@@ -525,7 +515,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 struct stat path_stat;
                 stat(dir->d_name, &path_stat);
                 int isfile = S_ISREG(path_stat.st_mode);
-                // printf("isfile = %d\n", isfile);
 
                 //file is not a directory, go to next file
                 if(isfile!=0){
@@ -535,21 +524,17 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 //it is a directory named "backup-..."
                 char copy[50];
                 strcpy(copy, dir->d_name);
-                char* timestamp = strtok(copy, "backup-");
-                contentLength += (strlen(timestamp) + 1); //+1 is for "\n"
+                char* timestamp = strtok(copy, "backup-");  //get timestamp by itself
+                contentLength += (strlen(timestamp) + 1);   //+1 is for "\n"
 
-                append(&list, atoi(timestamp)); //append timestamp to list
+                append(&list, atoi(timestamp));             //append timestamp to list
             }
 
-            // printf("LINKED LIST:\n");
-            // printList(list);
-            // printf("\n");
+            request->content_length = contentLength;        //set content_length accordingly
+            construct_response(comm_fd, request);           //send response
 
-            request->content_length = contentLength;
-            construct_response(comm_fd, request);
-
-            sendList(comm_fd, list);
-            clearList(&list); //dealloc list
+            sendList(comm_fd, list);                        //send timestamps
+            clearList(&list);                               //dealloc list
 
             closedir(d);
             return; 
@@ -778,8 +763,6 @@ void executeFunctions (int comm_fd, struct httpObject* request, char* buf, struc
         put_request(comm_fd, request, buf, flag);
     }else if(strcmp(request->type, "GET") == 0){
         get_request(comm_fd, request, flag, buf);
-        printf("done with GET\n");
-        fflush(stdout);
     }
     else{
         request->status_code = 500;
