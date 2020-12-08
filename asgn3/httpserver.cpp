@@ -191,6 +191,15 @@ bool valid_name (char* filename, struct flags* flag){
         }else if(strncmp(filename, "r", 1) == 0){ //might not be just "r" (i.e. r/[timestamp])
             if(filename[1] == '/'){ //this is safer since we don't remove anything until we are for sure it's "r/" and not a reg file starting with an r
                 memmove(filename, filename+2, strlen(filename)); //remove "r/"
+
+                //check that the provided timestamp is made up of all digits
+                for(int i=0; i<strlen(filename); i++){
+                    if(!isalnum(filename[i])){
+                        flag->good_name = false;
+                        return false;
+                    }
+                }
+
                 flag->good_name = true;
                 flag->fileR = true;
                 return true;
