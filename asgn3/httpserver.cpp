@@ -206,7 +206,6 @@ bool valid_name (char* filename, struct flags* flag){
             }
             else if(strlen(filename) == 1){//only r 
                 memmove(filename, filename+1, strlen(filename)); //remove "r" so filename should be empty
-                printf("filename is %s\n", filename);
                 flag->good_name = true;
                 flag->fileR = true;
                 return true;
@@ -297,13 +296,10 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 }
 
                 //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                if(strncmp(dir->d_name, "httpserver", 10) == 0){
+             if((strncmp(dir->d_name, "httpserver", 10) == 0) || (strcmp(dir->d_name, "Makefile") == 0) ||
+                    (strcmp(dir->d_name, "README.md") == 0)){
                     continue;
                     }
-
-                if(strcmp(dir->d_name, "Makefile") == 0){
-                    continue;
-                }
                 //------------------------------------------------------------------------------------------------------
 
                 char filepath[100];
@@ -358,20 +354,16 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     }
                     
                     //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                    if(strncmp(dir->d_name, "httpserver", 10) == 0){
+                    if((strncmp(dir->d_name, "httpserver", 10) == 0) || (strcmp(dir->d_name, "Makefile") == 0) ||
+                    (strcmp(dir->d_name, "README.md") == 0)){
                     continue;
-                    }
-
-                    if(strcmp(dir->d_name, "Makefile") == 0){
-                        continue;
                     }
                     //------------------------------------------------------------------------------------------------------
 
                     char filepath[100];
-                    memset(filepath, 0, 100); //commented back in to fix the appending error
+                    memset(filepath, 0, 100);
                     strncpy(filepath, "./", 2);
                     strcat(filepath, dir->d_name);
-                    printf("filepath is %s\n", filepath);
                     copyFiles(filepath, source);
                     close(source);
                 }
@@ -426,10 +418,12 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 
             }else{
                 perror("d not a dir");
+                //invalid d
             }
 
             closedir(d);
-            
+
+
             //copy files from that backup folder to cwd
             char backup[50] = "./";
             strcat(backup, newest);
@@ -461,12 +455,9 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                     }
 
                     //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                    if(strncmp(dirb->d_name, "httpserver", 10) == 0){
+                     if((strncmp(dirb->d_name, "httpserver", 10) == 0) || (strcmp(dirb->d_name, "Makefile") == 0) ||
+                    (strcmp(dirb->d_name, "README.md") == 0)){
                     continue;
-                    }
-
-                    if(strcmp(dirb->d_name, "Makefile") == 0){
-                        continue;
                     }
                     //------------------------------------------------------------------------------------------------------
 
@@ -482,6 +473,9 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
             
             }else{
                 perror("b not a dir");
+                request->status_code = 404;
+                construct_response(comm_fd, request);
+                return;
             }
         }
         
