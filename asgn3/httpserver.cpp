@@ -165,15 +165,6 @@ void construct_response (int comm_fd, struct httpObject* request){
     send(comm_fd, response, strlen(response), 0);
 }
 
-// void syscallError(int fd, struct httpObject* request){
-//     if(fd == -1){
-//         request->status_code = 500;
-//         // printf("errno %d: %s\n", errno, strerror(errno));
-//         // fflush(stdout);
-//         construct_response(fd, request);
-//     }
-// }
-
 //returns TRUE if name is valid and FALSE if name is invalid
 bool valid_name (char* filename, struct flags* flag){
     //remove "/" from front of file name
@@ -263,7 +254,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
         snprintf(timestamp, 20, "%ld", t);
         char backup[30] = "./backup-";
         strcat(backup, timestamp);
-
    
         //create new folder
         int folder = mkdir(backup, 0777);
@@ -291,16 +281,24 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                 //check if filename is valid
                 int source = open(dir->d_name, O_RDONLY); //open source to copy from
                 if(source == -1){
-                    // perror("can't open source file");
                     continue; //skip backing up forbidden files: https://piazza.com/class/kfqgk8ox2mi4a1?cid=471
                 }
 
-                //take out later: don't want to accidentally corrupt our working file until everything works correctly
-             if((strncmp(dir->d_name, "httpserver", 10) == 0) || (strcmp(dir->d_name, "Makefile") == 0) ||
-                    (strcmp(dir->d_name, "README.md") == 0)){
-                    continue;
+                if(strlen(dir->d_name) != 10){
+                    flag->good_name = false;    
+                }else{
+                    flag->good_name = true;
+                }
+
+                for(int i=0; i<10; i++){
+                    if(!isalnum(dir->d_name[i])){
+                        flag->good_name = false;
                     }
-                //------------------------------------------------------------------------------------------------------
+                }
+                
+                if(flag->good_name == false) continue; //don't do anything with invalid file name
+
+                if(strncmp(dir->d_name, "httpserver", 10) == 0) continue;
 
                 char filepath[100];
                 strncpy(filepath, backup, 21);
@@ -353,12 +351,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                         }
                     }
                     
-                    //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                    if((strncmp(dir->d_name, "httpserver", 10) == 0) || (strcmp(dir->d_name, "Makefile") == 0) ||
-                    (strcmp(dir->d_name, "README.md") == 0)){
-                    continue;
-                    }
-                    //------------------------------------------------------------------------------------------------------
+                    if(strncmp(dir->d_name, "httpserver", 10) == 0) continue;
 
                     char filepath[100];
                     memset(filepath, 0, 100);
@@ -423,7 +416,6 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
 
             closedir(d);
 
-
             //copy files from that backup folder to cwd
             char backup[50] = "./";
             strcat(backup, newest);
@@ -454,12 +446,7 @@ void get_request (int comm_fd, struct httpObject* request, struct flags* flag, c
                         perror("can't open source file");
                     }
 
-                    //take out later: don't want to accidentally corrupt our working file until everything works correctly
-                     if((strncmp(dirb->d_name, "httpserver", 10) == 0) || (strcmp(dirb->d_name, "Makefile") == 0) ||
-                    (strcmp(dirb->d_name, "README.md") == 0)){
-                    continue;
-                    }
-                    //------------------------------------------------------------------------------------------------------
+                    if(strncmp(dirb->d_name, "httpserver", 10) == 0) continue;
 
                     char filepath[100];
                     memset(filepath, 0, 100);
