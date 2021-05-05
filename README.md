@@ -1,5 +1,5 @@
 ## About
-This repository contains the HTTP Server project written in C but submitted as CPP files. Each assignment builds off the previous one. Each asgn folder contains a .docx file describing the scope.
+This repository contains the HTTP Server project written in C but submitted as CPP files named httpserver.cpp. Design.pdf is design document of each assignment. Each .docx file describes the scope of the assignment. Each assignment builds off the previous one.
 
 ## Assignment Summary
 1. **asgn1** is a single threaded HTTP server that responds to GET/PUT requests to read and write files in the directory of httpserver.cpp.
